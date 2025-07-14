@@ -9,14 +9,14 @@
             "console": "integratedTerminal",
             "args": [
                 "--input_dir",
-                "/home/regarry/dd_phase_optimization/training_results/phase_model_20250630-140341/",
+                "training_results/phase_model_20250701-122000/",
                 //"./training_results/phase_model_20250508-165157/",
                 "--epoch",
-                "91",
+                "200",
                 "--res_dir",
                 "inference_results",
                 "--num_inferences",
-                "3",
+                "1",
                 //"--lens_approach",
                 //"fresnel",
                 //"--empty_mask",
@@ -41,7 +41,7 @@
             "args": [
                 //"--config", "config.yaml",
                 "--output_dir", "beam_axicon",
-                "--mask", "/home/regarry/dd_phase_optimization/training_results/phase_model_20250630-140341/mask_phase_epoch_90_149.tiff"
+                "--mask", "training_results/phase_model_20250702-115924/mask_phase_epoch_199_499.tiff"
                 //"--fresnel_lens_pattern"
             ]
         }

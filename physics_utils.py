@@ -10,7 +10,7 @@ import skimage.io
 import matplotlib.pyplot as plt
 from datetime import datetime
 import os
-from data_utils import save_output_layer, normalize_to_uint16
+from data_utils import save_output_layer
 
 # nohup python mask_learning.py &> ./logs/01-31-25-09-38.txt &
 
@@ -651,6 +651,15 @@ class PhysicalLayer(nn.Module):
        
         return output_layer
     
+    def test_fourf(self, input_field):
+        Ul1 = self.angular_spectrum_propagation(input_field, self.focal_length/self.px, debug = True) # light directly infront of the lens
+        Ul1_prime = Ul1 * self.B1 # light after the lens
+        Ul2 = self.angular_spectrum_propagation(Ul1_prime, (self.focal_length + self.focal_length_2)/self.px, debug = True) # light at the back focal plane of the lens
+        #Ul2 = self.angular_spectrum_propagation(Uf1, self.focal_length_2) # light directly infront of the lens
+        Ul2_prime = Ul2 * self.B2 # light after the 2nd lens
+        Uf2 = self.angular_spectrum_propagation(Ul2_prime, self.focal_length_2/self.px, debug = True)
+        return Uf2
+    
 
     @staticmethod
     def standardize_and_scale_to_uint16(img: np.ndarray) -> np.ndarray:
@@ -734,7 +743,8 @@ class PhysicalLayer(nn.Module):
         intensity_at_z = self.standardize_and_scale_to_uint16(intensity_at_z[:])
         for i, z_px in enumerate(range(z_min_px, z_max_px, z_step)):
             # Save the full 2D intensity profile at the current z-step
-            save_path = os.path.join(output_folder, f'intensity_z_{i:04d}.tiff')
+            z_mm = z_px*self.px*1.0e3
+            save_path = os.path.join(output_folder, f'intensity_{i:04d}_{z_mm:.2f}.tiff')
             #print(f'{i} {z_px}')
             skimage.io.imsave(save_path, intensity_at_z[i])
             
@@ -782,7 +792,10 @@ class PhysicalLayer(nn.Module):
         else:
             raise ValueError('lens approach not supported')
             
-        if self.counter == 0 and not self.training:    
+        #if self.counter == 0 and not self.training:  
+        if True:  
+            from data_utils import save_png
+            save_png(phase_mask, self.bfp_dir, "input phase mask", self.config)
             save_output_layer(output_layer, self.bfp_dir, self.lens_approach, self.counter, self.datetime, self.config)
 
         self.counter += 1

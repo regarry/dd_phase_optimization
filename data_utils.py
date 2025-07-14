@@ -12,6 +12,7 @@ import os
 import datetime
 import glob
 import matplotlib.pyplot as plt
+from PIL import Image, ImageDraw
 
 
 # ======================================================================================================================
@@ -493,6 +494,42 @@ def savePhaseMask(mask_param, ind, epoch, res_dir):
     #skimage.io.imsave('phase_learned/mask_real_epoch_' + str(epoch) + '_' + str(ind) + '.tiff' , mask_real)
     skimage.io.imsave(res_dir + '/mask_phase_epoch_' + str(epoch) + '_' + str(ind) + '.tiff', mask_numpy)
     return 0
+
+def generate_reticle_image(N):
+    """
+    Generates a simple reticle image of size N x N.
+
+    The reticle consists of a white background with a black crosshair
+    in the center.
+
+    Args:
+        N (int): The size of the square image (N x N pixels).
+
+    Returns:
+        PIL.Image.Image: A Pillow Image object representing the reticle.
+    """
+    if not isinstance(N, int) or N <= 0:
+        print("Error: N must be a positive integer.")
+        return None
+
+    # Create a grayscale with a white background
+    img = Image.new('L', (N, N), color=0)  # 'L' mode for grayscale, white background
+    draw = ImageDraw.Draw(img)
+
+    # Calculate center coordinates
+    center_x = N // 2
+    center_y = N // 2
+
+    # Draw horizontal line (crosshair)
+    draw.line((0, center_y, N, center_y), fill='white', width=100)
+
+    # Draw vertical line (crosshair)
+    draw.line((center_x, 0, center_x, N), fill='white', width=100)
+    
+    # convert to numpy array
+    img = np.array(img)
+
+    return img
 
 def save_output_layer(output_layer, base_dir, lens_approach, counter, datetime, config):
     # Convert the tensor to a NumPy array

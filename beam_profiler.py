@@ -147,33 +147,38 @@ def main():
 
         # Save as PNG for easy viewing
         png_path = os.path.join(output_subdir, "beam_profile.png")
-        plt.figure(figsize=(5, 10))
+        plt.figure(figsize=(8, 10))
         plt.imshow(normalize_to_uint16(beam_profile), cmap='hot', aspect='equal')
         plt.colorbar()
 
         # Set axis labels and ticks in mm
-        z_range_mm = np.linspace(z_min_mm, z_max_mm, num_z_steps)
+        z_range_px = range(z_min_pixels, z_max_pixels, z_step_pixels)
+        z_range_mm = np.array(list(z_range_px)) * px_mm  # Convert pixel range to mm
+        #z_range_mm = np.linspace(z_min_mm, z_max_mm, num_z_steps)
+        #y_range_px = range(y_min_pixels, y_max_pixels, y_step_pixels)
+        #y_range_mm = np.array(list(y_range_px)) * px_mm
         y_range_mm = np.linspace(y_min_mm, y_max_mm, y_max_pixels - y_min_pixels + 1) 
 
         plt.title(
             f"Timestamp: {timestamp}\n"
-            f"z: {z_min_mm:.2f}mm-{z_max_mm:.2f}mm, steps={num_z_steps},\n"
-            f"axicon angle={bessel_angle}°, \n"
-            f"lens={lens_approach}, \n"
-            f"focal_length_1={1.0e3*config.get('focal_length', 'N/A')}mm, \n"
-            f"focal_length_2={1.0e3*config.get('focal_length_2', 'N/A')}mm \n"
-            f"fresnel_lens_focal_length={1.0e3*config.get('fresnel_lens_focal_length', 'N/A')}mm\n"
-            f"Mask: {initial_phase_mask}\n"
+            #f"z: {z_min_mm:.2f}mm-{z_max_mm:.2f}mm, steps={num_z_steps},\n"
+            #f"axicon angle={bessel_angle}°, \n"
+            #f"lens={lens_approach}, \n"
+            #f"focal_length_1={1.0e3*config.get('focal_length', 'N/A')}mm, \n"
+            #f"focal_length_2={1.0e3*config.get('focal_length_2', 'N/A')}mm \n"
+            #f"fresnel_lens_focal_length={1.0e3*config.get('fresnel_lens_focal_length', 'N/A')}mm\n"
+            #f"Mask: {initial_phase_mask}\n"
             # display px
             f"Pixel size: {px_um:.2f} um\n"
-            f"{'ASM prop' if asm else 'Fresnel prop'}, "
+            #f"{'ASM prop' if asm else 'Fresnel prop'}, "
             f"FWHM: {beam_fwhm*10**6:.2f} um"
         )
         plt.xlabel("y (mm)")
         plt.ylabel("z (mm)")
+        num_z_ticks = 20
         plt.yticks(
-            ticks=np.linspace(0, len(z_range_mm)-1, num=5),
-            labels=[f"{z_range_mm[int(i)]:.2f}" for i in np.linspace(0, len(z_range_mm)-1, num=5)]
+            ticks=np.linspace(0, len(z_range_mm)-1, num=num_z_ticks),
+            labels=[f"{z_range_mm[int(i)]:.2f}" for i in np.linspace(0, len(z_range_mm)-1, num=num_z_ticks)]
         )
         # For y-axis ticks, we need to map pixel indices to mm values
         y_tick_pixels = np.linspace(0, len(y_range_mm)-1, num=5)

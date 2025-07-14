@@ -6,7 +6,7 @@ import skimage.io
 import torch
 from torch import nn
 from datetime import datetime
-from data_utils import load_config, makedirs, batch_xyz_to_boolean_grid, img_save_tiff, find_image_with_wildcard, batch_xyz_to_3_class_grid, save_3d_volume_as_tiffs, batch_xyz_to_3class_volume, save_png
+from data_utils import load_config, makedirs, batch_xyz_to_boolean_grid, img_save_tiff, find_image_with_wildcard, batch_xyz_to_3_class_grid, save_3d_volume_as_tiffs, batch_xyz_to_3class_volume, save_png, generate_reticle_image
 from cnn_utils import OpticsDesignCNN
 from cnn_utils_unet import OpticsDesignUnet
 from physics_utils import PhysicalLayer  # physical model import
@@ -317,5 +317,28 @@ def main():
                 skimage.io.imsave(beam_profile_out_path, (beam_profile/1e6).astype(np.uint16))
                 print(f"Saved beam profile for paper mask to {beam_profile_out_path}")
             """ 
+        # test 4f system with reticle
+        if False:
+            test_config = config.copy()
+            test_config['focal_length'] = 1.0e-3 
+            test_config['focal_length_2'] = 10.0e-3
+            #fourier_lens_config["illumination_scaling_factor"] = 1.0e-6
+            test_phys_model = PhysicalLayer(test_config).to(config['device'])
+            test_phys_model.eval()
+            #generate reticle
+            input = generate_reticle_image(config["N"])
+            # convert to tensor
+            input = torch.from_numpy(input).type(torch.FloatTensor).to(config['device'])
+            output = test_phys_model.test_fourf(input)
+            output_intensity = torch.abs(output)**2
+            # save input image
+            #save output image intensity
+            #reticle_out_path = os.path.join(out_dir, "reticle_image.tiff")
+            save_png(input.cpu().numpy(), out_dir, "reticle_image", config)
+            print(f"Saved reticle input image")
+            # save output image intensity
+            save_png(output_intensity.cpu().numpy(), out_dir, f"reticle_output", config)
+            print(f"Saved reticle output image")
 if __name__ == "__main__":
     main()
+    

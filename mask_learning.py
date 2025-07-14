@@ -166,20 +166,30 @@ def learn_mask(config,res_dir):
     torch.backends.cudnn.benchmark = True
 
     #Set the mask_phase as the parameter to derive
-    if config.get('initial_phase_mask', None) == "axicon":
-        mask_phase = generate_axicon_phase_mask(
+    inital_phasemask = config.get('initial_phase_mask', None)
+    if inital_phasemask == "axicon":
+        phase_mask = generate_axicon_phase_mask(
             (mask_phase_pixels, mask_phase_pixels), px*10**6, wavelength*10**9, bessel_cone_angle_degrees
         )
-    elif config.get('initial_phase_mask', None) == "empty":
-        mask_phase = np.zeros((mask_phase_pixels,mask_phase_pixels))
+    elif inital_phasemask == "empty":
+        phase_mask = np.zeros((mask_phase_pixels,mask_phase_pixels))
+    elif inital_phasemask == "random":
+        # generate a random phase mask
+        phase_mask = np.random.rand(mask_phase_pixels, mask_phase_pixels) * 2 * np.pi
+    elif inital_phasemask == "file":
+        # load the phase mask from a file
+        phase_mask_file = config.get('phase_mask_file', None)
+        if phase_mask_file is None:
+            raise ValueError("Please provide a 'phase_mask_file' in the config for 'file' type initial phase mask.")
+        phase_mask = skimage.io.imread(phase_mask_file, as_gray=True)
     else:
         # please enter a valid initial phase mask type error
         raise ValueError("Please enter a valid initial phase mask type.")
         
         
-    save_png(mask_phase, res_dir, "initial_phase_mask", config)
-    mask_phase = torch.from_numpy(mask_phase).type(torch.FloatTensor).to(device)
-    mask_param = nn.Parameter(mask_phase)
+    save_png(phase_mask, res_dir, "initial_phase_mask", config)
+    phase_mask = torch.from_numpy(phase_mask).type(torch.FloatTensor).to(device)
+    mask_param = nn.Parameter(phase_mask)
     mask_param.requires_grad_()
     
 
