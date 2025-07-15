@@ -28,7 +28,7 @@ def main():
         config = load_config(mask_config_path)
     else:
         config = load_config(args.config)
-    N = config['N']
+    N = config['phase_mask_pixel_size']
     px = float(config['px'])  # pixel size in meters
     config['px'] = px  # Store pixel size in config for later use
     px_mm = px * 1e3 # px in mm

@@ -88,6 +88,7 @@ def main():
     config = load_config(config_path)
     config['device'] = torch.device(args.device if torch.cuda.is_available() else "cpu")
     config['inference_epoch'] = args.epoch
+    config["phase_mask_pixel_size"] = 1152 
     if args.max_intensity:
         config['max_intensity'] = args.max_intensity
     #if args.lens_approach:
@@ -318,11 +319,12 @@ def main():
                 print(f"Saved beam profile for paper mask to {beam_profile_out_path}")
             """ 
         # test 4f system with reticle
-        if True:
+        if False:
             test_config = config.copy()
             test_config['px'] = 9.2e-6
             test_config['focal_length'] = 1.0e-3 
-            test_config['focal_length_2'] = 1.0e-3
+            test_config['focal_length_2'] = 0.750e-3
+            test_config['phase_mask_pixel_size'] = 1152
             #fourier_lens_config["illumination_scaling_factor"] = 1.0e-6
             test_phys_model = PhysicalLayer(test_config).to(config['device'])
             test_phys_model.eval()

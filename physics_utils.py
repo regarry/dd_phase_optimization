@@ -789,7 +789,11 @@ class PhysicalLayer(nn.Module):
 
     def forward(self, phase_mask, xyz):
         Nbatch, Nemitters = xyz.shape[0], xyz.shape[1]
-        phase_mask_upsampled = self.expand_matrix_kron_torch(phase_mask, self.phase_mask_upsample_factor)
+        if self.phase_mask_upsample_factor > 1:
+            phase_mask_upsampled = self.expand_matrix_kron_torch(phase_mask, self.phase_mask_upsample_factor)
+        else:
+            phase_mask_upsampled = phase_mask
+            
         if self.lens_approach == 'fresnel':
             mask_param = self.incident_gaussian * torch.exp(1j * phase_mask_upsampled)
             mask_param = mask_param[None, None, :]
@@ -814,18 +818,15 @@ class PhysicalLayer(nn.Module):
             output_layer = self.lensless(phase_mask_upsampled)
             # propagate to prop distance  pixels infront of lens
             output_layer = self.angular_spectrum_propagation(output_layer, self.lenless_prop_distance/self.px) # infront of lens
-
-
             
         elif self.lens_approach == '4f':
             output_layer = self.fourf(phase_mask_upsampled)
             
-        
         else:
             raise ValueError('lens approach not supported')
             
         #if self.counter == 0 and not self.training:  
-        if False:  # debugging 4f test
+        if False:  # debugging 4f 
             from data_utils import save_png
             save_png(phase_mask, self.bfp_dir, "input phase mask", self.config)
             save_output_layer(output_layer, self.bfp_dir, self.lens_approach, self.counter, self.datetime, self.config)

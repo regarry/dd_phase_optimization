@@ -362,7 +362,7 @@ def learn_mask(config,res_dir):
             torch.save(cnn.state_dict(),os.path.join(res_dir, 'net_{}.pt'.format(epoch)))
         save_png(mask_param.detach(), res_dir, str(epoch).zfill(3), config)
        #save_png(mask_param, res_dir, str(epoch).zfill(3), config)
-        savePhaseMask(mask_param, batch_index, epoch, res_dir)
+        savePhaseMask(mask_param, epoch, res_dir)
     torch.save(cnn.state_dict(), os.path.join(res_dir, 'net_{}.pt'.format(epoch)))
     return labels
 

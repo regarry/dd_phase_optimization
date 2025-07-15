@@ -487,7 +487,7 @@ class PhasesOnlineDataset(Dataset):
         return xyz_np, target
 
 
-def savePhaseMask(mask_param, ind, epoch, res_dir):
+def savePhaseMask(mask_param, epoch, res_dir):
     mask_numpy = mask_param.data.cpu().clone().numpy()
     #mask_real = np.abs(mask_numpy)
     #mask_phase = np.angle(mask_numpy)
