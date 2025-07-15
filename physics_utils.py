@@ -280,7 +280,7 @@ class PhysicalLayer(nn.Module):
         #unpack the config
         self.config = config
         self.bfp_dir = config["bfp_dir"]
-        self.N =  config['N']
+
         self.px = config['px']  #the pixel size used
         self.wavelength = config['wavelength']
         self.focal_length = config['focal_length']
@@ -314,6 +314,10 @@ class PhysicalLayer(nn.Module):
         self.datetime = datetime.now().strftime("%Y%m%d-%H%M%S")
         self.conv3d = config.get('conv3d', False)
         self.aperature = config.get('aperature', False)
+        self.kron_scale_factor = config.get('kron_scale_factor', 1)  # scale factor for the phase mask upsampling
+        #self.N =  config['N']
+        self.phase_mask_pixel_size = config['phase_mask_pixel_size']    
+        self.N = self.kron_scale_factor * self.phase_mask_pixel_size # grid size for the physics calculations
         #self.z_spacing = config.get('z_spacing', 0)
         #self.z_img_mode = config.get('z_img_mode', 'edgecenter')
         #if self.z_img_mode == 'everyother':
@@ -353,7 +357,7 @@ class PhysicalLayer(nn.Module):
         self.B1 = np.exp(-1j * C1)
         self.B1 = torch.from_numpy(self.B1).type(torch.cfloat).to(device)
     
-        # need to check if it relates to air or not added refractive index
+        # refractive index is of the medium 
         Q1 = np.exp(1j * (np.pi * self.refractive_index / (self.wavelength * self.focal_length)) * (
                     np.square(XX) + np.square(YY)))  # Fresnel diffraction equation at distance = focal length
         self.Q1 = torch.from_numpy(Q1).type(torch.cfloat).to(device)
@@ -370,17 +374,29 @@ class PhysicalLayer(nn.Module):
         # angular specturm
         k = 2 * self.refractive_index * np.pi / self.wavelength
         self.k = k
-        phy_x = self.N * self.px  # physical width (meters)
-        phy_y = self.N * self.px  # physical length (meters)
-        obj_size = [self.N, self.N]
-        # generate meshgrid
-        Fs_x = obj_size[1] / phy_x
-        Fs_y = obj_size[0] / phy_y
-        dFx = Fs_x / obj_size[1]
-        dFy = Fs_y / obj_size[0]
-        Fx = np.arange(-Fs_x / 2, Fs_x / 2, dFx)
-        Fy = np.arange(-Fs_y / 2, Fs_y / 2, dFy)
+       
+        # phy_x = self.N * self.px  # physical width (meters)
+        # phy_y = self.N * self.px  # physical length (meters)
+        # obj_size = [self.N, self.N]
+        # # generate meshgrid
+        # Fs_x = obj_size[1] / phy_x
+        # Fs_y = obj_size[0] / phy_y
+        # dFx = Fs_x / obj_size[1]
+        # dFy = Fs_y / obj_size[0]
+        # Fx = np.arange(-Fs_x / 2, Fs_x / 2, dFx)
+        # Fy = np.arange(-Fs_y / 2, Fs_y / 2, dFy)
         # alpha and beta (wavenumber components) 
+        
+        # Generate spatial frequencies using np.fft.fftfreq
+        # This function correctly produces N frequency bins.
+        # The 'd' argument is the spatial sampling interval (px).
+        Fx_raw = np.fft.fftfreq(self.N, d=self.px)
+        Fy_raw = np.fft.fftfreq(self.N, d=self.px)
+
+        # Shift the zero-frequency component to the center of the array
+        # This reorders the frequencies to be from -Fs/2 to Fs/2 - dF
+        Fx = np.fft.fftshift(Fx_raw)
+        Fy = np.fft.fftshift(Fy_raw)
         alpha = self.refractive_index * self.wavelength * Fx
         beta = self.refractive_index * self.wavelength * Fy
         [ALPHA, BETA] = np.meshgrid(alpha, beta)
@@ -652,12 +668,12 @@ class PhysicalLayer(nn.Module):
         return output_layer
     
     def test_fourf(self, input_field):
-        Ul1 = self.angular_spectrum_propagation(input_field, self.focal_length/self.px, debug = True) # light directly infront of the lens
+        Ul1 = self.angular_spectrum_propagation(input_field, self.focal_length/self.px, debug = False) # light directly infront of the lens
         Ul1_prime = Ul1 * self.B1 # light after the lens
-        Ul2 = self.angular_spectrum_propagation(Ul1_prime, (self.focal_length + self.focal_length_2)/self.px, debug = True) # light at the back focal plane of the lens
+        Ul2 = self.angular_spectrum_propagation(Ul1_prime, (self.focal_length + self.focal_length_2)/self.px, debug = False) # light at the back focal plane of the lens
         #Ul2 = self.angular_spectrum_propagation(Uf1, self.focal_length_2) # light directly infront of the lens
         Ul2_prime = Ul2 * self.B2 # light after the 2nd lens
-        Uf2 = self.angular_spectrum_propagation(Ul2_prime, self.focal_length_2/self.px, debug = True)
+        Uf2 = self.angular_spectrum_propagation(Ul2_prime, self.focal_length_2/self.px, debug = False)
         return Uf2
     
 
@@ -754,12 +770,25 @@ class PhysicalLayer(nn.Module):
         print("Cross-section generation complete.")
         return cross_section_profile
 
+    @staticmethod
+    def expand_matrix_kron_torch(matrix, scale_factor):
+        """
+        Expands a matrix by a given scale factor using the Kronecker product.
+        This function works with torch.autograd.
+        """
+        # Create the block tensor of ones.
+        # The dtype must match the input matrix's dtype for autograd to work smoothly.
+        block = torch.ones(scale_factor, scale_factor, dtype=matrix.dtype, device=matrix.device)
+        
+        # Compute the Kronecker product.
+        expanded_matrix = torch.kron(matrix, block)
+        return expanded_matrix
 
     def forward(self, phase_mask, xyz):
         Nbatch, Nemitters = xyz.shape[0], xyz.shape[1]
-        
+        phase_mask_upsampled = self.expand_matrix_kron_torch(phase_mask, self.kron_scale_factor)
         if self.lens_approach == 'fresnel':
-            mask_param = self.incident_gaussian * torch.exp(1j * phase_mask)
+            mask_param = self.incident_gaussian * torch.exp(1j * phase_mask_upsampled)
             mask_param = mask_param[None, None, :]
             #multiply the mask with the phase function of the lens (B1)
             B1 = self.B1 * mask_param
@@ -773,27 +802,27 @@ class PhysicalLayer(nn.Module):
             output_layer = E2[:, :, self.N // 2:3 * self.N // 2, self.N // 2:3 * self.N // 2]
         
         elif self.lens_approach == 'against_lens':
-            output_layer = self.against_lens(phase_mask)
+            output_layer = self.against_lens(phase_mask_upsampled)
             
         elif self.lens_approach == 'fourier_lens' or self.lens_approach == 'convolution':
-            output_layer = self.fourier_lens(phase_mask)
+            output_layer = self.fourier_lens(phase_mask_upsampled)
             
         elif self.lens_approach == 'lensless':
-            output_layer = self.lensless(phase_mask)
+            output_layer = self.lensless(phase_mask_upsampled)
             # propagate to prop distance  pixels infront of lens
             output_layer = self.angular_spectrum_propagation(output_layer, self.lenless_prop_distance/self.px) # infront of lens
 
 
             
         elif self.lens_approach == '4f':
-            output_layer = self.fourf(phase_mask)
+            output_layer = self.fourf(phase_mask_upsampled)
             
         
         else:
             raise ValueError('lens approach not supported')
             
         #if self.counter == 0 and not self.training:  
-        if True:  
+        if False:  # debugging 4f test
             from data_utils import save_png
             save_png(phase_mask, self.bfp_dir, "input phase mask", self.config)
             save_output_layer(output_layer, self.bfp_dir, self.lens_approach, self.counter, self.datetime, self.config)

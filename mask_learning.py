@@ -135,7 +135,7 @@ def learn_mask(config,res_dir):
     initial_learning_rate = config['initial_learning_rate']
     batch_size = config['batch_size']
     max_epochs = config['max_epochs']
-    mask_phase_pixels = config['mask_phase_pixels']
+    phase_mask_pixel_size = config['phase_mask_pixel_size']
     #psf_width_meters = config['psf_width_pixels'] * config['px']
     #path_save = config['path_save']
     #path_train = config['path_train']
@@ -169,13 +169,13 @@ def learn_mask(config,res_dir):
     inital_phasemask = config.get('initial_phase_mask', None)
     if inital_phasemask == "axicon":
         phase_mask = generate_axicon_phase_mask(
-            (mask_phase_pixels, mask_phase_pixels), px*10**6, wavelength*10**9, bessel_cone_angle_degrees
+            (phase_mask_pixel_size, phase_mask_pixel_size), px*10**6, wavelength*10**9, bessel_cone_angle_degrees
         )
     elif inital_phasemask == "empty":
-        phase_mask = np.zeros((mask_phase_pixels,mask_phase_pixels))
+        phase_mask = np.zeros((phase_mask_pixel_size,phase_mask_pixel_size))
     elif inital_phasemask == "random":
         # generate a random phase mask
-        phase_mask = np.random.rand(mask_phase_pixels, mask_phase_pixels) * 2 * np.pi
+        phase_mask = np.random.rand(phase_mask_pixel_size, phase_mask_pixel_size) * 2 * np.pi
     elif inital_phasemask == "file":
         # load the phase mask from a file
         phase_mask_file = config.get('phase_mask_file', None)

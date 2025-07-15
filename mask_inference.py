@@ -318,10 +318,11 @@ def main():
                 print(f"Saved beam profile for paper mask to {beam_profile_out_path}")
             """ 
         # test 4f system with reticle
-        if False:
+        if True:
             test_config = config.copy()
+            test_config['px'] = 9.2e-6
             test_config['focal_length'] = 1.0e-3 
-            test_config['focal_length_2'] = 10.0e-3
+            test_config['focal_length_2'] = 1.0e-3
             #fourier_lens_config["illumination_scaling_factor"] = 1.0e-6
             test_phys_model = PhysicalLayer(test_config).to(config['device'])
             test_phys_model.eval()
