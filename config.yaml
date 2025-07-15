@@ -22,7 +22,7 @@ random_seed: 123456
 initial_learning_rate: 0.01
 batch_size: 1
 max_epochs: 200
-phase_mask_pixel_size: 100
+phase_mask_pixel_size: 500
 data_path: "beads_img_defocus"
 path_save: "data_mask_learning"
 path_train: "traininglocations"
@@ -88,4 +88,4 @@ fresnel_lens_focal_length: 1.0e-3
 
 tv_loss_weight: 0.0  # 1.0e-9  # Weight for the total variation loss of the phase mask
 phase_mask_file: "training_results/phase_model_20250701-122000/mask_phase_epoch_199_149.tiff"
-kron_scale_factor: 10  # Scale factor for the phase mask upsampling, used in physics_utils.py
+phase_mask_upsample_factor: 10  # Scale factor for the phase mask upsampling, used in physics_utils.py

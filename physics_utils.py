@@ -314,10 +314,10 @@ class PhysicalLayer(nn.Module):
         self.datetime = datetime.now().strftime("%Y%m%d-%H%M%S")
         self.conv3d = config.get('conv3d', False)
         self.aperature = config.get('aperature', False)
-        self.kron_scale_factor = config.get('kron_scale_factor', 1)  # scale factor for the phase mask upsampling
+        self.phase_mask_upsample_factor = config.get('phase_mask_upsample_factor', 1)  # scale factor for the phase mask upsampling
         #self.N =  config['N']
         self.phase_mask_pixel_size = config['phase_mask_pixel_size']    
-        self.N = self.kron_scale_factor * self.phase_mask_pixel_size # grid size for the physics calculations
+        self.N = self.phase_mask_upsample_factor * self.phase_mask_pixel_size # grid size for the physics calculations
         #self.z_spacing = config.get('z_spacing', 0)
         #self.z_img_mode = config.get('z_img_mode', 'edgecenter')
         #if self.z_img_mode == 'everyother':
@@ -783,10 +783,13 @@ class PhysicalLayer(nn.Module):
         # Compute the Kronecker product.
         expanded_matrix = torch.kron(matrix, block)
         return expanded_matrix
+    
+    def upsample_pixel_size(matrix, scale_factor):
+        return matrix.repeat_interleave(scale_factor, dim=0).repeat_interleave(scale_factor, dim=1)
 
     def forward(self, phase_mask, xyz):
         Nbatch, Nemitters = xyz.shape[0], xyz.shape[1]
-        phase_mask_upsampled = self.expand_matrix_kron_torch(phase_mask, self.kron_scale_factor)
+        phase_mask_upsampled = self.expand_matrix_kron_torch(phase_mask, self.phase_mask_upsample_factor)
         if self.lens_approach == 'fresnel':
             mask_param = self.incident_gaussian * torch.exp(1j * phase_mask_upsampled)
             mask_param = mask_param[None, None, :]
