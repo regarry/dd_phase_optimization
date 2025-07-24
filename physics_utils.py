@@ -331,7 +331,7 @@ class PhysicalLayer(nn.Module):
         self.z_depth_list = config['z_depth_list']
 
         # to transer the physical size of the imaging volume
-        self.image_volume_um = image_volume
+        self.image_volume_size_px = image_volume
 
         self.up = nn.UpsamplingBilinear2d(scale_factor=2)
         x = list(range(-self.N // 2, self.N // 2))
@@ -835,10 +835,10 @@ class PhysicalLayer(nn.Module):
         
         if self.conv3d == False:
             # make a 4D tensor to store the 2D images
-            imgs3D = torch.zeros(Nbatch, self.Nimgs, self.image_volume_um[0], self.image_volume_um[0]).type(torch.FloatTensor).to(self.device)
+            imgs3D = torch.zeros(Nbatch, self.Nimgs, self.image_volume_size_px[0], self.image_volume_size_px[0]).type(torch.FloatTensor).to(self.device)
         elif self.conv3d == True and self.Nimgs > 1:
             #make a 5D tensor to store the 3D images
-            imgs3D = torch.zeros(Nbatch, 1, self.Nimgs, self.image_volume_um[0], self.image_volume_um[0]).type(torch.FloatTensor).to(self.device)
+            imgs3D = torch.zeros(Nbatch, 1, self.Nimgs, self.image_volume_size_px[0], self.image_volume_size_px[0]).type(torch.FloatTensor).to(self.device)
         else:
             raise ValueError('Nimgs must be > 1 to use conv3d')
         
@@ -846,7 +846,7 @@ class PhysicalLayer(nn.Module):
             for i in range(Nbatch):
                 for j in range(Nemitters):
                     # change x value to fit different field of view
-                    x = xyz[i, j, 0].type(torch.LongTensor) - self.image_volume_um[0]//2
+                    x = xyz[i, j, 0].type(torch.LongTensor) - self.image_volume_size_px[0]//2
                     y = xyz[i, j, 1].type(torch.LongTensor)
                     z = xyz[i, j, 2].type(torch.LongTensor)
 

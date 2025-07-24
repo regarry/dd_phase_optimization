@@ -12,11 +12,11 @@
                 "training_results/phase_model_20250715-141157/",
                 //"./training_results/phase_model_20250508-165157/",
                 "--epoch",
-                "21",
+                "200",
                 "--res_dir",
                 "inference_results",
                 "--num_inferences",
-                "1",
+                "2",
                 //"--lens_approach",
                 //"fresnel",
                 //"--empty_mask",
@@ -41,7 +41,7 @@
             "args": [
                 //"--config", "config.yaml",
                 "--output_dir", "beam_axicon",
-                "--mask", "training_results/phase_model_20250715-141157/mask_phase_epoch_16_499.tiff"
+                "--mask", "training_results/phase_model_20250715-141157/mask_phase_epoch_199_499.tiff"
                 //"--fresnel_lens_pattern"
             ]
         }

@@ -492,7 +492,7 @@ def savePhaseMask(mask_param, epoch, res_dir):
     #mask_real = np.abs(mask_numpy)
     #mask_phase = np.angle(mask_numpy)
     #skimage.io.imsave('phase_learned/mask_real_epoch_' + str(epoch) + '_' + str(ind) + '.tiff' , mask_real)
-    skimage.io.imsave(res_dir + '/mask_phase_epoch_' + str(epoch) + '_' + str(ind) + '.tiff', mask_numpy)
+    skimage.io.imsave(res_dir + '/mask_phase_epoch_' + str(epoch) + '_' + '.tiff', mask_numpy)
     return 0
 
 def generate_reticle_image(N):

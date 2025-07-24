@@ -2,6 +2,7 @@ import numpy as np
 from PIL import Image
 import math
 import os
+from datetime import datetime
 
 def process_phase_mask(input_phase_array, output_bmp_path, slm_width=None, slm_height=None, padding_mode=False,
                           add_grating=False, grating_period_x=0, grating_period_y=0, grating_angle_deg=0):
@@ -241,9 +242,11 @@ if __name__ == "__main__":
     # IMPORTANT: Replace these paths with the actual paths to your TIFF file and desired output.
     
     # Updated file paths as per your request
-    input_file = "training_results/phase_model_20250702-115924/mask_phase_epoch_199_499.tiff"
-    output_file = "training_results/phase_model_20250702-115924/mask_phase_epoch_199_normalized_phase.bmp"
-    output_file_with_grating = "training_results/phase_model_20250702-115924/mask_phase_epoch_199_normalized_phase_with_grating.bmp"
+    input_file = "training_results/phase_model_20250715-141157/mask_phase_epoch_199_499.tiff"
+    parent_dir = os.path.dirname(input_file)
+    datetime_str = datetime.now().strftime("%Y%m%d-%H%M%S")
+    output_file = os.path.join(parent_dir,f"normalized_phase_{datetime_str}.bmp")
+    output_file_with_grating = os.path.join(parent_dir,f"normalized_phase_with_grating_{datetime_str}.bmp")
 
     # --- SET YOUR SLM DIMENSIONS HERE ---
     slm_target_width = 1920
