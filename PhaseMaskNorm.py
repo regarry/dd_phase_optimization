@@ -3,6 +3,7 @@ from PIL import Image
 import math
 import os
 from datetime import datetime
+from data_utils import extract_datetime_and_epoch
 
 def process_phase_mask(input_phase_array, output_bmp_path, slm_width=None, slm_height=None, padding_mode=False,
                           add_grating=False, grating_period_x=0, grating_period_y=0, grating_angle_deg=0):
@@ -242,11 +243,13 @@ if __name__ == "__main__":
     # IMPORTANT: Replace these paths with the actual paths to your TIFF file and desired output.
     
     # Updated file paths as per your request
-    input_file = "training_results/phase_model_20250715-141157/mask_phase_epoch_199_499.tiff"
+    input_file = "training_results/phase_model_20250724-141949/mask_phase_epoch_55_.tiff"
     parent_dir = os.path.dirname(input_file)
-    datetime_str = datetime.now().strftime("%Y%m%d-%H%M%S")
-    output_file = os.path.join(parent_dir,f"normalized_phase_{datetime_str}.bmp")
-    output_file_with_grating = os.path.join(parent_dir,f"normalized_phase_with_grating_{datetime_str}.bmp")
+    #datetime_str = datetime.now().strftime("%Y%m%d-%H%M%S")
+
+    datetime_epoch = extract_datetime_and_epoch(input_file)
+    output_file = os.path.join(parent_dir,"normalized_phase", f"{datetime_epoch}.bmp")
+    #output_file_with_grating = os.path.join(parent_dir,"normalized_phase", f"g_{datetime_epoch}.bmp")
 
     # --- SET YOUR SLM DIMENSIONS HERE ---
     slm_target_width = 1920
@@ -266,7 +269,7 @@ if __name__ == "__main__":
 
     # Ensure output directories exist
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
-    os.makedirs(os.path.dirname(output_file_with_grating), exist_ok=True)
+    #os.makedirs(os.path.dirname(output_file_with_grating), exist_ok=True)
 
     print("--- Processing WITHOUT Grating ---")
     normalize_phase_image(input_file, output_file, 
@@ -278,14 +281,14 @@ if __name__ == "__main__":
     print(f"\nCheck '{output_file}' for the normalized and {'padded' if use_padding else 'resized'} 8-bit phase mask (without grating).")
 
     print("\n--- Processing WITH Grating (applied BEFORE resize/padding) ---")
-    normalize_phase_image(input_file, output_file_with_grating, 
-                          slm_width=slm_target_width, 
-                          slm_height=slm_target_height, 
-                          padding_mode=use_padding,
-                          add_grating=add_grating_to_output,
-                          grating_period_x=grating_x_period,
-                          grating_period_y=grating_y_period,
-                          grating_angle_deg=grating_angle)
+    # normalize_phase_image(input_file, output_file_with_grating, 
+    #                       slm_width=slm_target_width, 
+    #                       slm_height=slm_target_height, 
+    #                       padding_mode=use_padding,
+    #                       add_grating=add_grating_to_output,
+    #                       grating_period_x=grating_x_period,
+    #                       grating_period_y=grating_y_period,
+    #                       grating_angle_deg=grating_angle)
 
-    print(f"\nCheck '{output_file_with_grating}' for the normalized and {'padded' if use_padding else 'resized'} 8-bit phase mask WITH blazed grating.")
+    #print(f"\nCheck '{output_file_with_grating}' for the normalized and {'padded' if use_padding else 'resized'} 8-bit phase mask WITH blazed grating.")
     print("Remember to replace 'input_phase_mask.tiff' with your actual input file path.")

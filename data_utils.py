@@ -13,7 +13,7 @@ import datetime
 import glob
 import matplotlib.pyplot as plt
 from PIL import Image, ImageDraw
-
+import re
 
 # ======================================================================================================================
 # numpy array conversion to variable and numpy complex conversion to 2 channel torch tensor
@@ -492,7 +492,7 @@ def savePhaseMask(mask_param, epoch, res_dir):
     #mask_real = np.abs(mask_numpy)
     #mask_phase = np.angle(mask_numpy)
     #skimage.io.imsave('phase_learned/mask_real_epoch_' + str(epoch) + '_' + str(ind) + '.tiff' , mask_real)
-    skimage.io.imsave(res_dir + '/mask_phase_epoch_' + str(epoch) + '_' + '.tiff', mask_numpy)
+    skimage.io.imsave(res_dir + '/mask_phase_epoch_' + str(epoch) + '.tiff', mask_numpy)
     return 0
 
 def generate_reticle_image(N):
@@ -631,3 +631,19 @@ if __name__ == '__main__':
 
     save_3d_volume_as_tiffs(vol_zc3, out_dir, "z_coupled_beads_3class")
     print("Saved 3-class (background, between, bead) 3D volume slices to:", os.path.join(out_dir, "z_coupled_beads_3class"))
+
+def extract_datetime_and_epoch(filepath):
+    """
+    Extracts the datetime string and epoch number from a phase mask file path.
+    
+    Args:
+        filepath (str): The file path string.
+    
+    Returns:
+        tuple: (datetime_str, epoch_num) or (None, None) if not found.
+    """
+    datetime_match = re.search(r'phase_model_(\d{8}-\d{6})', filepath)
+    epoch_match = re.search(r'epoch_(\d+)_', filepath)
+    datetime_str = datetime_match.group(1) if datetime_match else None
+    epoch_num = int(epoch_match.group(1)) if epoch_match else None
+    return f"{datetime_str}-{epoch_num}"

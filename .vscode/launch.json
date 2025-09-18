@@ -9,7 +9,7 @@
             "console": "integratedTerminal",
             "args": [
                 "--input_dir",
-                "training_results/phase_model_20250715-141157/",
+                "training_results/phase_model_20250729-133820/",
                 //"./training_results/phase_model_20250508-165157/",
                 "--epoch",
                 "200",
@@ -40,8 +40,9 @@
             "console": "integratedTerminal",
             "args": [
                 //"--config", "config.yaml",
-                "--output_dir", "beam_axicon",
-                "--mask", "training_results/phase_model_20250715-141157/mask_phase_epoch_199_499.tiff"
+                "--output_dir", "beam_profiles",
+                "--mask", "training_results/phase_model_20250729-133820/mask_phase_epoch_199.tiff"
+                //"training_results/phase_model_20250715-141157/mask_phase_epoch_199_499.tiff"//
                 //"--fresnel_lens_pattern"
             ]
         }

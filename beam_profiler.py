@@ -5,7 +5,7 @@ import torch
 import skimage.io
 import matplotlib.pyplot as plt
 from datetime import datetime
-from data_utils import load_config, normalize_to_uint16
+from data_utils import load_config, normalize_to_uint16, extract_datetime_and_epoch
 #from beam_profile_gen import BeamProfiler
 from bessel import generate_axicon_phase_mask
 from physics_utils import PhysicalLayer
@@ -19,9 +19,11 @@ def main():
     args = parser.parse_args()
 
     # Create a timestamped subfolder output dir
+    input_timestamp_epoch = extract_datetime_and_epoch(args.mask)
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    output_subdir = os.path.join(args.output_dir, timestamp)
+    output_subdir = os.path.join(args.output_dir, input_timestamp_epoch,timestamp)
     os.makedirs(output_subdir, exist_ok=True)
+    print(f"Output directory: {output_subdir}")
     if args.mask and not args.config:
         print(f"Using provided config and mask: {args.mask}")
         mask_config_path = os.path.join(os.path.dirname(args.mask), "config.yaml")
@@ -38,6 +40,7 @@ def main():
     bessel_angle = config['bessel_cone_angle_degrees']
     config['device'] = 'cuda' if torch.cuda.is_available() else 'cpu'
     device = config['device']
+    config["phase_mask_file"] = args.mask
     asm = config.get('angular_spectrum_method', True)
     initial_phase_mask = config.get('initial_phase_mask', "")
 
@@ -134,16 +137,20 @@ def main():
         print("Generating beam profile...")
         output_beam_sections_dir = os.path.join(output_subdir, "beam_sections")
         os.makedirs(output_beam_sections_dir, exist_ok=True)
-        beam_profile = phys_layer.generate_beam_cross_section(
+        beam_profile, intensity_profile = phys_layer.generate_beam_cross_section(
             output_layer, output_beam_sections_dir,
             (z_min_pixels, z_max_pixels, z_step_pixels),
             (y_min_pixels, y_max_pixels), asm = asm
         )
 
         # Save as TIFF (like mask_inference)
-        tiff_path = os.path.join(output_subdir, "beam_profile.tiff")
-        skimage.io.imsave(tiff_path, (beam_profile))
-        print(f"Saved beam profile as TIFF to {tiff_path}")
+        beam_profile_tiff_path = os.path.join(output_subdir, "beam_profile.tiff")
+        skimage.io.imsave(beam_profile_tiff_path, (beam_profile))
+        print(f"Saved beam profile as TIFF to {beam_profile_tiff_path}")
+        
+        intensity_tiff_path = os.path.join(output_subdir, "intensity_profile.tiff")
+        skimage.io.imsave(intensity_tiff_path, (intensity_profile))
+        print(f"Saved beam profile as TIFF to {intensity_tiff_path}")
 
         # Save as PNG for easy viewing
         png_path = os.path.join(output_subdir, "beam_profile.png")

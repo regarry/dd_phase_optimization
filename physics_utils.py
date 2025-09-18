@@ -283,7 +283,7 @@ class PhysicalLayer(nn.Module):
 
         self.px = config['px']  #the pixel size used
         self.wavelength = config['wavelength']
-        self.focal_length = config['focal_length']
+        self.focal_length_1 = config['focal_length_1']
         psf_width_pixels = config['psf_width_pixels']
         psf_edge_remove = config['psf_edge_remove']
         laser_beam_FWHC = config['laser_beam_FWHC']
@@ -304,6 +304,9 @@ class PhysicalLayer(nn.Module):
         self.max_intensity = torch.tensor(max_intensity)
         self.counter = 0
         self.focal_length_2 = config['focal_length_2']  # for 4f approach
+        self.focal_length_3 = config['focal_length_3']  # for 9f approach
+        self.focal_length_4 = config['focal_length_4']  # for 9f approach
+        self.focal_length_5 = config['focal_length_5']  # for 9f approach
         self.illumination_scaling_factor = config.get('illumination_scaling_factor')  # scaling factor for the illumination
         self.camera_max_adu = config.get('camera_max_adu')  # maximum ADU for the camera
         self.lenless_prop_distance = config.get('lenless_prop_distance', 1.0e-3)  # distance for lensless propagation
@@ -351,25 +354,42 @@ class PhysicalLayer(nn.Module):
         self.incident_gaussian = 1 * np.exp(-(np.square(X) + np.square(Y)) / (2 * laser_beam_FWHC ** 2))
         self.incident_gaussian = torch.from_numpy(self.incident_gaussian).type(torch.FloatTensor).to(device)
         
-
-        C1 = (np.pi / (self.wavelength * self.focal_length) * (np.square(X) + np.square(Y))) % (
+        # --- Lens 1 (B1) and Propagation Kernel 1 (Q1) ---
+        
+        C1 = (np.pi / (self.wavelength * self.focal_length_1) * (np.square(X) + np.square(Y))) % (
             2 * np.pi)  # lens function lens as a phase transformer
         self.B1 = np.exp(-1j * C1)
         self.B1 = torch.from_numpy(self.B1).type(torch.cfloat).to(device)
     
         # refractive index is of the medium 
-        Q1 = np.exp(1j * (np.pi * self.refractive_index / (self.wavelength * self.focal_length)) * (
-                    np.square(XX) + np.square(YY)))  # Fresnel diffraction equation at distance = focal length
-        self.Q1 = torch.from_numpy(Q1).type(torch.cfloat).to(device)
+        #Q1 = np.exp(1j * (np.pi * self.refractive_index / (self.wavelength * self.focal_length_1)) * (
+        #            np.square(XX) + np.square(YY)))  # Fresnel diffraction equation at distance = focal length
+        #self.Q1 = torch.from_numpy(Q1).type(torch.cfloat).to(device)
 
         # --- Lens 2 (B2) and Propagation Kernel 2 (Q2) ---
         C2 = (np.pi / (self.wavelength * self.focal_length_2) * (np.square(X) + np.square(Y))) % (2 * np.pi)
         self.B2 = np.exp(-1j * C2)
         self.B2 = torch.from_numpy(self.B2).type(torch.cfloat).to(device)
+        
+        # lens 3
+        C3 = (np.pi / (self.wavelength * self.focal_length_3) * (np.square(X) + np.square(Y))) % (2 * np.pi)
+        self.B3 = np.exp(-1j * C3)
+        self.B3 = torch.from_numpy(self.B3).type(torch.cfloat).to(device)
+        
+        # lens 4
+        C4 = (np.pi / (self.wavelength * self.focal_length_4) * (np.square(X) + np.square(Y))) % (2 * np.pi)
+        self.B4 = np.exp(-1j * C4)
+        self.B4 = torch.from_numpy(self.B4).type(torch.cfloat).to(device)
+        
+        # lens 5
+        C5 = (np.pi / (self.wavelength * self.focal_length_5) * (np.square(X) + np.square(Y))) % (2 * np.pi)
+        self.B5 = np.exp(-1j * C5)
+        self.B5 = torch.from_numpy(self.B5).type(torch.cfloat).to(device)
+        
 
-        # Q2 for propagation over self.focal_length_2
-        Q2_val = np.exp(1j * (np.pi * self.refractive_index / (self.wavelength * self.focal_length_2)) * (np.square(self.XX) + np.square(self.YY)))
-        self.Q2 = torch.from_numpy(Q2_val).type(torch.cfloat).to(device)
+        ## Q2 for propagation over self.focal_length_2
+        #Q2_val = np.exp(1j * (np.pi * self.refractive_index / (self.wavelength * self.focal_length_2)) * (np.square(self.XX) + np.square(self.YY)))
+        #self.Q2 = torch.from_numpy(Q2_val).type(torch.cfloat).to(device)
         
         # angular specturm
         k = 2 * self.refractive_index * np.pi / self.wavelength
@@ -631,7 +651,7 @@ class PhysicalLayer(nn.Module):
         Ta = Ta[None, None, :] 
         Ul = self.incident_gaussian * Ta # light directly behind the SLM (or in our case reflected from the SLM)
         Ul_prime = Ul * self.B1 # light after the lens
-        output_layer = self.fresnel_propagation(Ul_prime, self.focal_length/self.px, debug=False) # light at the back focal plane of the lens
+        output_layer = self.fresnel_propagation(Ul_prime, self.focal_length_1/self.px, debug=False) # light at the back focal plane of the lens
         #Ul_prime_pad = F.pad(Ul_prime, (self.N//2, self.N//2, self.N//2, self.N//2), 'constant', 0) # padded to interpolate with fft
         #Uf = torch.fft.ifftshift(torch.fft.ifft2(torch.fft.fft2(Ul_prime_pad) * torch.fft.fft2(self.Q1))) # light at the back focal plane of the lens   
         #output_layer = Uf[:, :, self.N // 2:3 * self.N // 2, self.N // 2:3 * self.N // 2]
@@ -640,9 +660,9 @@ class PhysicalLayer(nn.Module):
     def fourier_lens(self, phase_mask):
         Ta = torch.exp(1j * phase_mask) # amplitude transmittance (in our case the slm reflectance)
         Uo = self.incident_gaussian * Ta # light directly behind the SLM (or in our case reflected from the SLM)
-        Ul = self.angular_spectrum_propagation(Uo, self.focal_length/self.px) # light directly infront of the lens
+        Ul = self.angular_spectrum_propagation(Uo, self.focal_length_1/self.px) # light directly infront of the lens
         Ul_prime = Ul * self.B1 # light after the lens
-        Uf = self.angular_spectrum_propagation(Ul_prime, self.focal_length/self.px) # light at the back focal plane of the lens
+        Uf = self.angular_spectrum_propagation(Ul_prime, self.focal_length_1/self.px) # light at the back focal plane of the lens
         output_layer = Uf[None, None, :, :] # light at the back focal plane of the lens
         return output_layer
 
@@ -656,21 +676,39 @@ class PhysicalLayer(nn.Module):
     def fourf(self, phase_mask):
         Ta = torch.exp(1j * phase_mask) # amplitude transmittance (in our case the slm reflectance)
         Uo = self.incident_gaussian * Ta # light directly behind the SLM (or in our case reflected from the SLM)
-        Ul1 = self.angular_spectrum_propagation(Uo, self.focal_length/self.px, debug = False) # light directly infront of the lens
+        Ul1 = self.angular_spectrum_propagation(Uo, self.focal_length_1/self.px, debug = False) # light directly infront of the lens
         Ul1_prime = Ul1 * self.B1 # light after the lens
-        Ul2 = self.angular_spectrum_propagation(Ul1_prime, (self.focal_length+self.focal_length_2)/self.px, debug = False) # light at the back focal plane of the lens
+        Ul2 = self.angular_spectrum_propagation(Ul1_prime, (self.focal_length_1+self.focal_length_2)/self.px, debug = False) # light at the back focal plane of the lens
         #Ul2 = self.angular_spectrum_propagation(Uf1, self.focal_length_2) # light directly infront of the lens
         Ul2_prime = Ul2 * self.B2 # light after the 2nd lens
         Uf2 = self.angular_spectrum_propagation(Ul2_prime, self.focal_length_2/self.px, debug = False) # light at the back focal plane of the lens
         output_layer = Uf2[None, None, :, :] # light at the back focal plane of the lens
-        
        
         return output_layer
     
-    def test_fourf(self, input_field):
-        Ul1 = self.angular_spectrum_propagation(input_field, self.focal_length/self.px, debug = False) # light directly infront of the lens
+    def ninef(self, phase_mask):
+        Ta = torch.exp(1j * phase_mask) # amplitude transmittance (in our case the slm reflectance)
+        Uo = self.incident_gaussian * Ta # light directly behind the SLM (or in our case reflected from the SLM)
+        Ul1 = self.angular_spectrum_propagation(Uo, self.focal_length_1/self.px, debug = False) # light directly behind the lens
         Ul1_prime = Ul1 * self.B1 # light after the lens
-        Ul2 = self.angular_spectrum_propagation(Ul1_prime, (self.focal_length + self.focal_length_2)/self.px, debug = False) # light at the back focal plane of the lens
+        Ul2 = self.angular_spectrum_propagation(Ul1_prime, (self.focal_length_1+self.focal_length_2)/self.px, debug = False) 
+        Ul2_prime = Ul2 * self.B2 # light after the 2nd lens
+        Ul3 = self.angular_spectrum_propagation(Ul2_prime, (self.focal_length_2+self.focal_length_3)/self.px, debug = False) 
+        Ul3_prime = Ul3 * self.B3 # light after the 3rd lens
+        Ul4 = self.angular_spectrum_propagation(Ul3_prime, (self.focal_length_3+self.focal_length_4)/self.px, debug = False) 
+        Ul4_prime = Ul4 * self.B4 # light after the 4th ens
+        Ul5 = self.angular_spectrum_propagation(Ul4_prime, (self.focal_length_4+self.focal_length_5)/self.px, debug = False) 
+        Ul5_prime = Ul5 * self.B5 # light after the 5th lens
+        Uf5 = self.angular_spectrum_propagation(Ul5_prime, self.focal_length_5/self.px, debug = False) 
+        output_layer = Uf5[None, None, :, :] 
+       
+        return output_layer
+    
+    
+    def test_fourf(self, input_field):
+        Ul1 = self.angular_spectrum_propagation(input_field, self.focal_length_1/self.px, debug = False) # light directly infront of the lens
+        Ul1_prime = Ul1 * self.B1 # light after the lens
+        Ul2 = self.angular_spectrum_propagation(Ul1_prime, (self.focal_length_1 + self.focal_length_2)/self.px, debug = False) # light at the back focal plane of the lens
         #Ul2 = self.angular_spectrum_propagation(Uf1, self.focal_length_2) # light directly infront of the lens
         Ul2_prime = Ul2 * self.B2 # light after the 2nd lens
         Uf2 = self.angular_spectrum_propagation(Ul2_prime, self.focal_length_2/self.px, debug = False)
@@ -763,12 +801,51 @@ class PhysicalLayer(nn.Module):
             save_path = os.path.join(output_folder, f'intensity_{i:04d}_{z_mm:.2f}.tiff')
             #print(f'{i} {z_px}')
             skimage.io.imsave(save_path, intensity_at_z[i])
-            
+        
+        def visualize_column_sums(P: np.ndarray, output_folder) -> np.ndarray:
+            """
+            Calculates the sum of columns for each image in a 3D NumPy array
+            and visualizes the results as a new "image".
+
+            Args:
+                P (np.ndarray): A 3D NumPy array of shape (num_images, height, width),
+                                where 'height' and 'width' are typically 2048.
+                                The data type is expected to be uint16.
+
+            Returns:
+                np.ndarray: A 2D NumPy array of shape (num_images, width), where
+                            each row represents an original image and its column sums.
+                            The data type will be uint32 to prevent overflow.
+            """
+            if P.ndim != 3:
+                raise ValueError("Input array P must be 3-dimensional (num_images, height, width).")
+            if P.shape[1] != 2048 or P.shape[2] != 2048:
+                print(f"Warning: Expected image dimensions of 2048x2048, but got {P.shape[1]}x{P.shape[2]}.")
+
+            # Sum columns for each image.
+            # Axis=2 refers to the column dimension in a (num_images, rows, columns) array.
+            # Using uint32 to prevent potential overflow as sums can exceed uint16 max.
+            column_sums_per_image = np.sum(P, axis=1, dtype=np.uint32)
+            column_visual_path = os.path.join(output_folder,'column_sums_visualization.png')
+            # Visualize the new "image"
+            plt.figure(figsize=(12, 6))
+            plt.imshow(column_sums_per_image, aspect='auto', cmap='viridis')
+            plt.colorbar(label='Summed Column Value')
+            plt.title('Column Sums for Each Image (New "Image")')
+            plt.xlabel('Column Index')
+            plt.ylabel('Original Image Index')
+            plt.savefig(column_visual_path) # Save the plot as an image file
+            plt.close() # Close the plot to prevent it from displaying immediately in some environments
+
+            return column_sums_per_image
+        
+        column_sums_image = visualize_column_sums(intensity_at_z, output_folder)
+    
         # save cross_section_profile as tiff in 32 bit float format
         #cross_section_save_path = os.path.join(output_folder, 'cross_section_profile.tiff')
         #skimage.io.imsave(cross_section_save_path, cross_section_profile.astype(np.float32))
         print("Cross-section generation complete.")
-        return cross_section_profile
+        return cross_section_profile, column_sums_image
 
     @staticmethod
     def expand_matrix_kron_torch(matrix, scale_factor):
@@ -793,7 +870,7 @@ class PhysicalLayer(nn.Module):
             phase_mask_upsampled = self.expand_matrix_kron_torch(phase_mask, self.phase_mask_upsample_factor)
         else:
             phase_mask_upsampled = phase_mask
-            
+        """    
         if self.lens_approach == 'fresnel':
             mask_param = self.incident_gaussian * torch.exp(1j * phase_mask_upsampled)
             mask_param = mask_param[None, None, :]
@@ -807,8 +884,8 @@ class PhysicalLayer(nn.Module):
             # Goodman book equation 4-14, convolution method - lens kernel (Q1) and the image after mask and lens function (E2)
             E2 = torch.fft.ifftshift(torch.fft.ifft2(torch.fft.fft2(E1) * torch.fft.fft2(self.Q1)))
             output_layer = E2[:, :, self.N // 2:3 * self.N // 2, self.N // 2:3 * self.N // 2]
-        
-        elif self.lens_approach == 'against_lens':
+        """
+        if self.lens_approach == 'against_lens':
             output_layer = self.against_lens(phase_mask_upsampled)
             
         elif self.lens_approach == 'fourier_lens' or self.lens_approach == 'convolution':
@@ -822,11 +899,15 @@ class PhysicalLayer(nn.Module):
         elif self.lens_approach == '4f':
             output_layer = self.fourf(phase_mask_upsampled)
             
+        elif self.lens_approach == '9f':
+            output_layer = self.ninef(phase_mask_upsampled)
+            
         else:
             raise ValueError('lens approach not supported')
             
         #if self.counter == 0 and not self.training:  
-        if False:  # debugging 4f 
+        debug = False
+        if debug:  # debugging 4f 
             from data_utils import save_png
             save_png(phase_mask, self.bfp_dir, "input phase mask", self.config)
             save_output_layer(output_layer, self.bfp_dir, self.lens_approach, self.counter, self.datetime, self.config)
@@ -855,7 +936,7 @@ class PhysicalLayer(nn.Module):
                     U1_intensity = torch.real(U1 * torch.conj(U1)) # intensity of the propagated field
                     #U1 = self.fresnel_propagation(output_layer, x) # fresnel propagation
                     # Here we assume that the beam is being dithered up and down
-                    intensity = torch.sum(U1_intensity[0, 0, :, int((self.N//2-1) + z)]) # if px is 1e-6 why multiply by 1e6?
+                    intensity = torch.sum(U1_intensity[0, 0, :, int((self.N//2-1) + z)]) 
                     intensity = intensity * self.illumination_scaling_factor
                     if self.conv3d == False:
                         imgs3D[i, l, x_ori - self.psf_keep_radius:x_ori + self.psf_keep_radius+1, y - self.psf_keep_radius: y + self.psf_keep_radius + 1] += torch.from_numpy(

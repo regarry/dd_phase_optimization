@@ -69,19 +69,21 @@ def main():
     # Automatically determine CNN model path if not provided
     if not args.model_path:
         # x is an integer that begins at 0 and increases by 1.
-        x0 = int((args.epoch - 1) / 10)
-        candidate_low = x0 * 10 + 1
-        candidate_high = (x0 + 1) * 10 
-        if abs(args.epoch - candidate_low) <= abs(candidate_high - args.epoch):
-            chosen_epoch = candidate_low
-        else:
-            chosen_epoch = candidate_high
+        
+        # x0 = int((args.epoch - 1) / 10)
+        # candidate_low = x0 * 10 + 1
+        # candidate_high = (x0 + 1) * 10 
+        # if abs(args.epoch - candidate_low) <= abs(candidate_high - args.epoch):
+        #     chosen_epoch = candidate_low
+        # else:
+        #     chosen_epoch = candidate_high
+        chosen_epoch = args.epoch
         model_file = f"net_{chosen_epoch - 1}.pt"
         args.model_path = os.path.join(args.input_dir, model_file)
         print(f"Automatically using CNN model: {args.model_path}")
         
     
-    display = 0  # Display the first image in the batch
+   
     
     # Load configuration and set device
     config_path = os.path.join(args.input_dir, "config.yaml")
@@ -89,6 +91,7 @@ def main():
     config['device'] = torch.device(args.device if torch.cuda.is_available() else "cpu")
     config['inference_epoch'] = args.epoch
     config["phase_mask_pixel_size"] = 1152 
+    display = slice(None) if config["batch_size_gen"] ==1 else 0# Display the first image in the batch; slice(None) for whole array
     if args.max_intensity:
         config['max_intensity'] = args.max_intensity
     #if args.lens_approach:
@@ -103,7 +106,7 @@ def main():
     learned_lens_approach = config['lens_approach']
 
     # Load mask from tiff file (for both models)
-    mask_path = find_image_with_wildcard(args.input_dir, f"mask_phase_epoch_{args.epoch-1}_", "tiff")
+    mask_path = find_image_with_wildcard(args.input_dir, f"mask_phase_epoch_{args.epoch-1}", "tiff")
     mask_np = skimage.io.imread(mask_path)
     mask_tensor = torch.from_numpy(mask_np).type(torch.FloatTensor).to(config['device'])
     mask_param = torch.nn.Parameter(mask_tensor, requires_grad=False)
