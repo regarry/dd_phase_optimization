@@ -1,0 +1,50 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Mask Inference",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/mask_inference.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--input_dir",
+                "training_results/phase_model_20250729-133820/",
+                //"./training_results/phase_model_20250508-165157/",
+                "--epoch",
+                "200",
+                "--res_dir",
+                "inference_results",
+                "--num_inferences",
+                "2",
+                //"--lens_approach",
+                //"fresnel",
+                //"--empty_mask",
+                //"--paper_mask",
+                //"example_optimized_phase.tiff",
+                //"--no_noise",
+                //"--max_intensity",
+                //"8.0e+10", // 5e4, 5e10
+                //"--generate_beam_profile",
+                //"--bead_volume",
+                "--plot_train_loss"
+
+
+            ]
+        },
+        {
+            "name": "Beam Profiler",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/beam_profiler.py",
+            "console": "integratedTerminal",
+            "args": [
+                //"--config", "config.yaml",
+                "--output_dir", "beam_profiles",
+                "--mask", "training_results/phase_model_20250729-133820/mask_phase_epoch_199.tiff"
+                //"training_results/phase_model_20250715-141157/mask_phase_epoch_199_499.tiff"//
+                //"--fresnel_lens_pattern"
+            ]
+        }
+    ]
+}
