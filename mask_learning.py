@@ -24,7 +24,8 @@ import scipy.io as sio
 from bessel import generate_axicon_phase_mask
 #import hdf5storage  # new import for saving MATLAB 7.3 files
 
-# systemctl restart --user xdg-desktop-portal-gnome
+# sudo killall xdg-desktop-portal-gnome
+# sudo killall nautilus
 # nohup python mask_learning.py &> ./logs/$(date +'%Y%m%d-%H%M%S').txt &
 def list_to_range(lst):
     if len(lst) == 1:

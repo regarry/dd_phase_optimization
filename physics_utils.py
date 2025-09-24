@@ -686,6 +686,21 @@ class PhysicalLayer(nn.Module):
        
         return output_layer
     
+    def fivef(self, phase_mask):
+        Ta = torch.exp(1j * phase_mask) # amplitude transmittance (in our case the slm reflectance)
+        Uo = self.incident_gaussian * Ta # light directly behind the SLM (or in our case reflected from the SLM)
+        Ul1 = self.angular_spectrum_propagation(Uo, self.focal_length_1/self.px, debug = False) # light directly infront of the lens
+        Ul1_prime = Ul1 * self.B1 # light after the lens
+        Ul2 = self.angular_spectrum_propagation(Ul1_prime, (self.focal_length_1+self.focal_length_2)/self.px, debug = False) # light at the back focal plane of the lens
+        #Ul2 = self.angular_spectrum_propagation(Uf1, self.focal_length_2) # light directly infront of the lens
+        Ul2_prime = Ul2 * self.B2 # light after the 2nd lens
+        Ul3 = self.angular_spectrum_propagation(Ul2_prime, (self.focal_length_2+self.focal_length_3)/self.px, debug = False) # light at the back focal plane of the lens
+        Ul3_prime = Ul3 * self.B3 # light after the 3rd lens
+        Uf3 = self.angular_spectrum_propagation(Ul3_prime, self.focal_length_3/self.px, debug = False) # light at the back focal plane of the lens
+        output_layer = Uf3[None, None, :, :] # light at the back focal plane of the lens
+       
+        return output_layer
+    
     def ninef(self, phase_mask):
         Ta = torch.exp(1j * phase_mask) # amplitude transmittance (in our case the slm reflectance)
         Uo = self.incident_gaussian * Ta # light directly behind the SLM (or in our case reflected from the SLM)
@@ -896,6 +911,9 @@ class PhysicalLayer(nn.Module):
             # propagate to prop distance  pixels infront of lens
             output_layer = self.angular_spectrum_propagation(output_layer, self.lenless_prop_distance/self.px) # infront of lens
             
+        elif self.lens_approach == '5f':
+            output_layer = self.fivef(phase_mask_upsampled)
+                
         elif self.lens_approach == '4f':
             output_layer = self.fourf(phase_mask_upsampled)
             

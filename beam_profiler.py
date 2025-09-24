@@ -115,7 +115,9 @@ def main():
     mask_tensor = torch.from_numpy(mask_np).type(torch.FloatTensor).to(device)
 
     config['Nimgs'] = 1
-    lens_approach = config['lens_approach']
+    #lens_approach = config['lens_approach']
+    # to test 9f try running results with fourier lens
+    lens_approach = 'fourier_lens'  # temporarily force fourier lens for testing
     phys_layer = PhysicalLayer(config)
     phys_layer.eval()
     with torch.no_grad():
@@ -128,6 +130,8 @@ def main():
             output_layer = phys_layer.lensless(mask_tensor)
         elif lens_approach == '4f':
             output_layer = phys_layer.fourf(mask_tensor)
+        elif lens_approach == '9f':
+            output_layer = phys_layer.ninef(mask_tensor)
         else:
             raise ValueError('lens approach not supported')
 

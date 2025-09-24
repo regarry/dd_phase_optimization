@@ -48,7 +48,7 @@ ratio_input_output_image_size: 1  # default with Unet 1, with ResNet 4
 z_range_cost_function: [0,0] # the range +- from z=0 that is considered ground truth
 use_unet: true
 num_classes: 1
-lens_approach: "9f" # "fourier_lens" or "4f" or "lensless"
+lens_approach: "5f" # "fourier_lens" or "4f" or "lensless"
 #power_2: 1000 # pad to this power for fourier transform
 bfp_dir: "back_focal_plane"
 dropout: 0.5

@@ -78,7 +78,7 @@ def main():
         # else:
         #     chosen_epoch = candidate_high
         chosen_epoch = args.epoch
-        model_file = f"net_{chosen_epoch - 1}.pt"
+        model_file = f"net_{chosen_epoch}.pt"
         args.model_path = os.path.join(args.input_dir, model_file)
         print(f"Automatically using CNN model: {args.model_path}")
         

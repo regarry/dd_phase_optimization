@@ -3,12 +3,12 @@ import os
 
 if __name__ == "__main__":
     # Set your arguments here
-    training_folder = "training_results/phase_model_20250729-133820"
+    training_folder = "training_results/phase_model_20250918-120251"
     epoch = 199
     inference_results = "inference_results"
     beam_profiles = "beam_profiles"
 
-    mask_file = os.path.join(training_folder, f"mask_phase_epoch_{epoch}_.tiff")
+    mask_file = os.path.join(training_folder, f"mask_phase_epoch_{epoch}.tiff")
 
     # Run mask_inference.py
     inference_cmd = [
@@ -20,7 +20,7 @@ if __name__ == "__main__":
         "--plot_train_loss"
     ]
     print("Running mask_inference.py...")
-    #subprocess.run(inference_cmd, check=True)
+    subprocess.run(inference_cmd, check=True)
 
     # Run beam_profiler.py
     profiler_cmd = [
