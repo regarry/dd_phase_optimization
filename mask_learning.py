@@ -26,6 +26,7 @@ from bessel import generate_axicon_phase_mask
 
 # sudo killall xdg-desktop-portal-gnome
 # sudo killall nautilus
+# conda activate /rsstu/users/a/agrinba/DeepDesign/deepdesign
 # nohup python mask_learning.py &> ./logs/$(date +'%Y%m%d-%H%M%S').txt &
 def list_to_range(lst):
     if len(lst) == 1:
