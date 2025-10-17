@@ -33,7 +33,7 @@ data_path: "beads_img_defocus"
 path_save: "data_mask_learning"
 path_train: "traininglocations"
 ori_intensity: 20000  # arbitrary units
-laser_beam_FWHC: 2.0e-3  # 100.0e-6 #425.0e-6  # in m, the size of the FWHM of the Gaussian beam (0.6mm with 3x BE)
+laser_beam_FWHC: 4.0e-3  # 100.0e-6 #425.0e-6  # in m, the size of the FWHM of the Gaussian beam (0.6mm with 3x BE)
 max_defocus: 41  # um for generating the PSFs
 learning_rate_scheduler_factor: 0.1
 learning_rate_scheduler_patience: 5
@@ -47,8 +47,8 @@ ratio_input_output_image_size: 1  # default with Unet 1, with ResNet 4
 # if 0, only the infocus plane is considered, default value 1
 z_range_cost_function: [0,0] # the range +- from z=0 that is considered ground truth
 use_unet: true
-num_classes: 1
-lens_approach: "5f" # "fourier_lens" or "4f" or "lensless"
+num_classes: 3
+lens_approach: "4f" # "fourier_lens" or "4f" or "lensless"
 #power_2: 1000 # pad to this power for fourier transform
 bfp_dir: "back_focal_plane"
 dropout: 0.5
@@ -57,7 +57,7 @@ aperature: False
 #z_img_mode: 'edgecenter'
 #z_spacing: 2
 z_depth_list: [0] # z slices input into the cnn
-z_coupled_ratio: 0.0
+z_coupled_ratio: 0.5
 z_coupled_spacing_range: [2,5]
 weights: [1.0,1.0,2.0] # cross entropy loss weights (must be floats)
 
