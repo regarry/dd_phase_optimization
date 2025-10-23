@@ -24,6 +24,8 @@ import scipy.io as sio
 from bessel import generate_axicon_phase_mask
 #import hdf5storage  # new import for saving MATLAB 7.3 files
 
+# bsub -n 1 -W 6:00 -q bme_gpu -gpu "num=1:mode=exclusive_process:mps=no" -Is bash
+# ssh regarry@gpuXX to view gpu usage
 # sudo killall xdg-desktop-portal-gnome
 # sudo killall nautilus
 # conda activate /rsstu/users/a/agrinba/DeepDesign/deepdesign

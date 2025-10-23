@@ -337,6 +337,7 @@ def batch_xyz_to_3_class_grid(xyz, xyz_between_beads, config):
             z = int(xyz_between_beads[k][m, 2])
             if 0 <= x < H and 0 <= y < W and z_range_cost_function[0] <= z <= z_range_cost_function[1]:
                 volume[k, z, x, y] = 2
+        volume = torch.from_numpy(volume).type(torch.FloatTensor)
     return volume
 
 def other_planes_gt(xyz_np, config, plane):

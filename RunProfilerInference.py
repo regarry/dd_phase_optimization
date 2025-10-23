@@ -3,7 +3,7 @@ import os
 
 if __name__ == "__main__":
     # Set your arguments here
-    training_folder = "training_results/phase_model_20250918-120251"
+    training_folder = "training_results/phase_model_20251021-165104"
     epoch = 199
     inference_results = "inference_results"
     beam_profiles = "beam_profiles"
@@ -16,8 +16,9 @@ if __name__ == "__main__":
         "--input_dir", training_folder,
         "--epoch", str(epoch),
         "--res_dir", inference_results,
-        "--num_inferences", "2",
-        "--plot_train_loss"
+        "--num_inferences", "1",
+        "--plot_train_loss",
+        "--device", "cpu"
     ]
     print("Running mask_inference.py...")
     subprocess.run(inference_cmd, check=True)
