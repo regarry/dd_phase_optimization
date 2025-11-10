@@ -2,7 +2,7 @@ ntrain: 1000  # default 10000 how many bead volumes per epoch
 nvalid: 1  # default 1000
 batch_size_gen: 1  # default 2
 # Number of emitters per image
-num_particles_range: [800, 801]  # with a strong gpu [450, 550]
+num_particles_range: [1200, 1201]  # with a strong gpu [450, 550]
 image_volume: [400, 400, 30]  # the volume of imaging each dimension in px (in camera coordinates)
 particle_spatial_range_xy: [15, 385]  # dependence on the volume size default 200 um
 # um, to avoid edges of the image so 15 um away
@@ -69,8 +69,8 @@ weights: [1.0,1.0,2.0] # cross entropy loss weights (must be floats)
 # increase z couple spacing or ratio to increase the number of between beads
 # try focal loss
 # changing input z slices
-initial_phase_mask: "random"
-bessel_cone_angle_degrees: 0.05
+initial_phase_mask: "empty"
+bessel_cone_angle_degrees: 0.1
 
 angular_spectrum_method: True
 
