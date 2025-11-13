@@ -2,7 +2,7 @@ ntrain: 1000  # default 10000 how many bead volumes per epoch
 nvalid: 1  # default 1000
 batch_size_gen: 1  # default 2
 # Number of emitters per image
-num_particles_range: [1200, 1201]  # with a strong gpu [450, 550]
+num_particles_range: [800, 801]  # with a strong gpu [450, 550]
 image_volume: [400, 400, 30]  # the volume of imaging each dimension in px (in camera coordinates)
 particle_spatial_range_xy: [15, 385]  # dependence on the volume size default 200 um
 # um, to avoid edges of the image so 15 um away

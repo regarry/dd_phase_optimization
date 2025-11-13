@@ -7,6 +7,7 @@ import random
 from datetime import datetime
 import math
 import torch
+import argparse
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.optim import Adam
@@ -371,11 +372,13 @@ def learn_mask(config,res_dir):
     return labels
 
 if __name__ == '__main__':
-
+    parser = argparse.ArgumentParser(description="Mask learning")
+    parser.add_argument('-c', '--config', default='config.yaml', help='Path to config yaml')
+    args = parser.parse_args()
     
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     
-    config = load_config("config.yaml")
+    config = load_config(args.config)
     #z_range_cost_function = config['z_range_cost_function']
     z_coupled_ratio = config.get('z_coupled_ratio',0)
     z_coupled_spacing_range = config.get('z_coupled_spacing_range',(0,0))
