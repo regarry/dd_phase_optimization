@@ -243,12 +243,12 @@ if __name__ == "__main__":
     # IMPORTANT: Replace these paths with the actual paths to your TIFF file and desired output.
     
     # Updated file paths as per your request
-    input_file = "training_results/phase_model_20250724-141949/mask_phase_epoch_55_.tiff"
+    input_file = "inference_results/beads/800/20251205-152656/mask_phase_epoch_199.tiff"
     parent_dir = os.path.dirname(input_file)
-    #datetime_str = datetime.now().strftime("%Y%m%d-%H%M%S")
+    datetime_str = datetime.now().strftime("%Y%m%d-%H%M%S")
 
-    datetime_epoch = extract_datetime_and_epoch(input_file)
-    output_file = os.path.join(parent_dir,"normalized_phase", f"{datetime_epoch}.bmp")
+    #datetime_epoch = extract_datetime_and_epoch(input_file)
+    output_file = os.path.join(parent_dir,"normalized_phase", f"{datetime_str}.bmp")
     #output_file_with_grating = os.path.join(parent_dir,"normalized_phase", f"g_{datetime_epoch}.bmp")
 
     # --- SET YOUR SLM DIMENSIONS HERE ---
@@ -263,7 +263,7 @@ if __name__ == "__main__":
     # --- GRATING PARAMETERS ---
     # Set add_grating=True to enable grating superposition
     add_grating_to_output = True
-    grating_x_period = 8 # Period in pixels. Adjust this value to change the grating frequency.
+    grating_x_period = 4 # Period in pixels. Adjust this value to change the grating frequency.
     grating_y_period = 0 # Set to 0 if you only want a grating along X, or specify for Y.
     grating_angle = 0 # Angle in degrees. 0 degrees means grating lines are vertical (blaze horizontal).
 

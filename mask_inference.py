@@ -203,9 +203,9 @@ def main():
         for batch, value in config.items():
             f.write(f"{batch}: {value}\n")
     
-    #input_mask_path = os.path.join(out_dir, "input_mask.tiff")
+    input_mask_path = os.path.join(out_dir, "input_mask.tiff")
     save_png(mask_np, out_dir, "input_mask", config)
-    #skimage.io.imsave(input_mask_path, mask_np)
+    skimage.io.imsave(input_mask_path, mask_np)
     print(f"Saved input mask")
         
     # Generate and save beam profile for the input mask

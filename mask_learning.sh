@@ -5,7 +5,7 @@
 #BSUB -q bme_gpu
 #BSUB -gpu "num=1:mode=exclusive_process:mps=no"
 ##BSUB -R "select[hname!=gpu18]"
-#BSUB -J 1200_beads
+#BSUB -J psf_test
 #BSUB -o ./logs/.%J
 #BSUB -e ./logs/.%J
 nvidia-smi

@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 import pickle
-from psf_gen import apply_blur_kernel
+from psf_gen import apply_blur_kernel, generate_psf
 from data_utils import PhasesOnlineDataset, savePhaseMask, generate_batch, load_config, makedirs, save_png
 from cnn_utils import OpticsDesignCNN
 from cnn_utils_unet import OpticsDesignUnet
@@ -25,6 +25,7 @@ import scipy.io as sio
 from bessel import generate_axicon_phase_mask
 #import hdf5storage  # new import for saving MATLAB 7.3 files
 
+# to submit execute submit_mask_learning.sh
 # bsub -n 1 -W 6:00 -q bme_gpu -gpu "num=1:mode=exclusive_process:mps=no" -Is bash
 # ssh regarry@gpuXX to view gpu usage
 # sudo killall xdg-desktop-portal-gnome
@@ -379,6 +380,7 @@ if __name__ == '__main__':
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     
     config = load_config(args.config)
+    config['px'] = config['slm_px'] / config['phase_mask_upsample_factor']
     #z_range_cost_function = config['z_range_cost_function']
     z_coupled_ratio = config.get('z_coupled_ratio',0)
     z_coupled_spacing_range = config.get('z_coupled_spacing_range',(0,0))
@@ -457,6 +459,8 @@ if __name__ == '__main__':
     gen_data(config,res_dir)
     # pre generate defocus beads - can only run once
     if not os.path.isdir(config['data_path']):
+        config['max_defocus'] = config['z_stop']//config['px']
+        generate_psf(config)
         beads_img(config)
     # learn the mask
     learn_mask(config,res_dir)

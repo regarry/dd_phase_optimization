@@ -6,10 +6,10 @@ import os
 # python RunProfilerInference.py
 if __name__ == "__main__":
     # Set your arguments here
-    training_folder = "training_results/800_beads_random_init_20251023-051229"
+    training_folder = "training_results/800_beads_phase_model_20251021-111735"
     epoch = 199
-    inference_results = "inference_results/init/random/"
-    beam_profiles = "beam_profiles"
+    inference_results = "inference_results/"
+    beam_profiles = inference_results
 
     mask_file = os.path.join(training_folder, f"mask_phase_epoch_{epoch}.tiff")
 

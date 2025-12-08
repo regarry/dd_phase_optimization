@@ -284,8 +284,8 @@ class PhysicalLayer(nn.Module):
         self.px = config['px']  #the pixel size used
         self.wavelength = config['wavelength']
         self.focal_length_1 = config['focal_length_1']
-        psf_width_pixels = config['psf_width_pixels']
-        psf_edge_remove = config['psf_edge_remove']
+        #psf_width_pixels = config['psf_width_pixels']
+        #psf_edge_remove = config['psf_edge_remove']
         laser_beam_FWHC = config['laser_beam_FWHC']
         self.refractive_index = config['refractive_index']
         max_defocus = config['max_defocus']
