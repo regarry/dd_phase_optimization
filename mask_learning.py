@@ -13,6 +13,7 @@ from torch.utils.data import DataLoader
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 import pickle
+import glob
 from psf_gen import apply_blur_kernel, generate_psf
 from data_utils import PhasesOnlineDataset, savePhaseMask, generate_batch, load_config, makedirs, save_png
 from cnn_utils import OpticsDesignCNN
@@ -26,6 +27,7 @@ from bessel import generate_axicon_phase_mask
 #import hdf5storage  # new import for saving MATLAB 7.3 files
 
 # to submit execute submit_mask_learning.sh
+#./submit_mask_learning.sh
 # bsub -n 1 -W 6:00 -q bme_gpu -gpu "num=1:mode=exclusive_process:mps=no" -Is bash
 # ssh regarry@gpuXX to view gpu usage
 # sudo killall xdg-desktop-portal-gnome
@@ -125,7 +127,7 @@ def beads_img(config):
 
     #Create the images that have the PSF, based on distance from the detection lens focal point
     #41 refers to 41 um maximum defocus in the simulation; the volume was 200x200x30um^3, 30 um in Z so max 15 um defocus
-    for i in range(max_defocus):
+    for i in range(len(setup_defocus_psf)):
         blurred_img = apply_blur_kernel(bead_ori_img, setup_defocus_psf[i])
         skimage.io.imsave(os.path.join(data_path, 'z' + str(i).zfill(2) + '.tiff'), blurred_img.astype('uint16'))
     return None
@@ -458,9 +460,14 @@ if __name__ == '__main__':
     # Generate the data for the training
     gen_data(config,res_dir)
     # pre generate defocus beads - can only run once
-    if not os.path.isdir(config['data_path']):
-        config['max_defocus'] = config['z_stop']//config['px']
+    # if psf_z.mat does not exist
+    img_dir = config['data_path']
+    tiff_files = glob.glob(os.path.join(img_dir, "z*.tiff"))
+    actual_file_count = len(tiff_files)
+    config['max_defocus'] = actual_file_count - 1
+    if not os.path.isfile('psf_z.mat'):
         generate_psf(config)
+    if not os.path.isdir(config['data_path']):
         beads_img(config)
     # learn the mask
     learn_mask(config,res_dir)

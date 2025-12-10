@@ -62,8 +62,8 @@ def integrate_numerical(function_to_integrate, start, end):
     def imag_function(x):
         return np.imag(function_to_integrate(x))
 
-    real_result = scipy.integrate.quad(real_function, start, end)[0]
-    imag_result = scipy.integrate.quad(imag_function, start, end)[0]
+    real_result = scipy.integrate.quad(real_function, start, end, limit=200)[0]
+    imag_result = scipy.integrate.quad(imag_function, start, end, limit=200)[0]
     return real_result + 1j * imag_result
 
 
