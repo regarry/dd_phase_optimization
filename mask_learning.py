@@ -113,7 +113,7 @@ def beads_img(config):
     bead_ori_img = np.zeros((psf_width_pixels,psf_width_pixels))  
     setup_defocus_psf = sio.loadmat('psf_z.mat')['psf'] #this is a matrix that Chen has generated before
     ori_intensity = config['ori_intensity']
-    max_defocus = config['max_defocus']
+    #max_defocus = config['max_defocus']
     
     makedirs(data_path)
 
@@ -297,7 +297,7 @@ def learn_mask(config,res_dir):
     #not_improve = 0
     train_losses = []
     for epoch in np.arange(start_epoch, end_epoch):
-        epoch_start_time = time.time()
+        #epoch_start_time = time.time()
         # print current epoch number
         print('='*20)
         print('Epoch {}/{}'.format(epoch+1, num_epochs))
@@ -380,9 +380,25 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    
     config = load_config(args.config)
     config['px'] = config['slm_px'] / config['phase_mask_upsample_factor']
+    psf_keep_radius = config['psf_keep_radius']
+    bead_volume = config['bead_volume']
+    image_volume = [
+        bead_volume[0] + 2 * psf_keep_radius,
+        bead_volume[1] + 2 * psf_keep_radius,
+        bead_volume[2]
+    ]
+    config['image_volume'] = image_volume
+    z_length = bead_volume[2]
+    z_start = -(bead_volume[2] // 2)
+    z_end = z_start + z_length
+    config['particle_spatial_range_z'] = [z_start, z_end]
+    config['particle_spatial_range_xy'] = [psf_keep_radius, bead_volume[0] + psf_keep_radius]
+    config['psf_width_pixels'] = 2 * psf_keep_radius + 1
+    
+    #particle_spatial_range_xy: [15, 985] # [min, max] px, to avoid edges (
+    #particle_spatial_range_z: [-49, 49, 1] # [start, stop, step] px
     #z_range_cost_function = config['z_range_cost_function']
     z_coupled_ratio = config.get('z_coupled_ratio',0)
     z_coupled_spacing_range = config.get('z_coupled_spacing_range',(0,0))
@@ -453,18 +469,18 @@ if __name__ == '__main__':
 
     
     # set results folder
-    model_name = f"phase_model_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-    res_dir = os.path.join('training_results', model_name)
+    model_name = f"{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    training_data_path = config.get('training_data_path', 'training_results')
+    res_dir = os.path.join(training_data_path, model_name)
     makedirs(res_dir)
     
     # Generate the data for the training
     gen_data(config,res_dir)
     # pre generate defocus beads - can only run once
-    # if psf_z.mat does not exist
-    img_dir = config['data_path']
-    tiff_files = glob.glob(os.path.join(img_dir, "z*.tiff"))
-    actual_file_count = len(tiff_files)
-    config['max_defocus'] = actual_file_count - 1
+    
+    # instead want to make it count number of defocus from the .mat file 
+    # and want generate_psf to output to a text file the psfs simulated
+    
     if not os.path.isfile('psf_z.mat'):
         generate_psf(config)
     if not os.path.isdir(config['data_path']):

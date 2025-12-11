@@ -288,7 +288,8 @@ class PhysicalLayer(nn.Module):
         #psf_edge_remove = config['psf_edge_remove']
         laser_beam_FWHC = config['laser_beam_FWHC']
         self.refractive_index = config['refractive_index']
-        max_defocus = config['max_defocus']
+        #max_defocus = config['max_defocus']
+        data_path = self.config['data_path']
         image_volume = config['image_volume']
         psf_keep_radius = config['psf_keep_radius']
         device = config['device']
@@ -431,13 +432,16 @@ class PhysicalLayer(nn.Module):
         # read defocus images
         self.imgs = []
         # Cut the PSF images at different planes
-        for z in range(0, max_defocus):
-            img = skimage.io.imread('beads_img_defocus/z' + str(z).zfill(2) + '.tiff')
-            center_img = len(img)//2
-
-            self.imgs.append(img[center_img + -psf_keep_radius:center_img+psf_keep_radius+1,\
-                                       center_img + -psf_keep_radius:center_img+psf_keep_radius+1])
-            #Debug
+        # Load all TIFF images sequentially from the config['data_path'] folder
+        
+        tiff_files = sorted([f for f in os.listdir(data_path) if f.lower().endswith('.tiff')])
+        print(f"Found {len(tiff_files)} TIFF files in {data_path}:")
+        for idx, fname in enumerate(tiff_files):
+            img_path = os.path.join(data_path, fname)
+            img = skimage.io.imread(img_path)
+            self.imgs.append(img)
+            print(f"Loaded [{idx}] {fname} with shape {img.shape}")
+        print(f"Total images loaded into self.imgs: {len(self.imgs)}")
             #plt.imshow(img[center_img + -psf_keep_radius:center_img+psf_keep_radius+1,\
             #                           center_img + -psf_keep_radius:center_img+psf_keep_radius+1])
             #plt.axis('off')  # Turn off axis labels
@@ -934,10 +938,10 @@ class PhysicalLayer(nn.Module):
         
         if self.conv3d == False:
             # make a 4D tensor to store the 2D images
-            imgs3D = torch.zeros(Nbatch, self.Nimgs, self.image_volume_size_px[0], self.image_volume_size_px[0]).type(torch.FloatTensor).to(self.device)
+            imgs3D = torch.zeros(Nbatch, self.Nimgs, self.image_volume_size_px[0], self.image_volume_size_px[1]).type(torch.FloatTensor).to(self.device)
         elif self.conv3d == True and self.Nimgs > 1:
             #make a 5D tensor to store the 3D images
-            imgs3D = torch.zeros(Nbatch, 1, self.Nimgs, self.image_volume_size_px[0], self.image_volume_size_px[0]).type(torch.FloatTensor).to(self.device)
+            imgs3D = torch.zeros(Nbatch, 1, self.Nimgs, self.image_volume_size_px[0], self.image_volume_size_px[1]).type(torch.FloatTensor).to(self.device)
         else:
             raise ValueError('Nimgs must be > 1 to use conv3d')
         
@@ -954,14 +958,17 @@ class PhysicalLayer(nn.Module):
                     U1_intensity = torch.real(U1 * torch.conj(U1)) # intensity of the propagated field
                     #U1 = self.fresnel_propagation(output_layer, x) # fresnel propagation
                     # Here we assume that the beam is being dithered up and down
-                    intensity = torch.sum(U1_intensity[0, 0, :, int((self.N//2-1) + z)]) 
+                    # change this to only dither 2*x centered where x is the max dither amount
+                    # or the height of the FOV
+                    ycenter_u1_intensity = U1_intensity.shape[2] // 2
+                    intensity = torch.sum(U1_intensity[0, 0, ycenter_u1_intensity - self.image_volume_size_px[1]:ycenter_u1_intensity + self.image_volume_size_px[1], int((self.N//2-1) + z)]) 
                     intensity = intensity * self.illumination_scaling_factor
                     if self.conv3d == False:
-                        imgs3D[i, l, x_ori - self.psf_keep_radius:x_ori + self.psf_keep_radius+1, y - self.psf_keep_radius: y + self.psf_keep_radius + 1] += torch.from_numpy(
+                        imgs3D[i, l, x_ori - self.psf_keep_radius:x_ori + self.psf_keep_radius  + 1, y - self.psf_keep_radius: y + self.psf_keep_radius + 1] += torch.from_numpy(
                             self.imgs[abs(z.item()-self.z_depth_list[l])].astype('float32')).type(torch.FloatTensor).to(self.device) * intensity
                     
                     elif self.conv3d == True and self.Nimgs > 1:
-                        imgs3D[i, 0, l, x_ori - self.psf_keep_radius:x_ori + self.psf_keep_radius+1, y - self.psf_keep_radius: y + self.psf_keep_radius + 1] += torch.from_numpy(
+                        imgs3D[i, 0, l, x_ori - self.psf_keep_radius:x_ori + self.psf_keep_radius + 1, y - self.psf_keep_radius: y + self.psf_keep_radius + 1] += torch.from_numpy(
                             self.imgs[abs(z.item()-self.z_depth_list[l])].astype('float32')).type(torch.FloatTensor).to(self.device) * intensity
 
         noisy_imgs3D = self.noise(imgs3D)

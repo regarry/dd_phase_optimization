@@ -157,6 +157,7 @@ def save_png(image, output_dir, title, config):
     plt.tight_layout()
     plt.savefig(png_path)
     print(f"Saved {title} as PNG to {png_path}")
+    plt.close('all')
          
 def find_image_with_wildcard(directory, filename_prefix, file_type):
     """

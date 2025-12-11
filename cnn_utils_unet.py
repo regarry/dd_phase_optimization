@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from physics_utils import PhysicalLayer
-
+import torch.nn.functional as F
 
 # AG This code was taken from
 # ://debuggercafe.com/unet-from-scratch-using-pytorch/

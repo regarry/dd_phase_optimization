@@ -1,7 +1,7 @@
 #!/bin/bash
-#BSUB -n 16
+#BSUB -n 8
 #BSUB -W 96:00
-#BSUB -R "rusage[mem=24GB]"
+#BSUB -R "rusage[mem=48GB]"
 #BSUB -q bme_gpu
 #BSUB -gpu "num=1:mode=exclusive_process:mps=no"
 ##BSUB -R "select[hname!=gpu18]"

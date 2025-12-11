@@ -2,6 +2,7 @@
 
 import os
 import numpy as np
+import imageio
 import scipy.integrate
 import scipy.signal
 import scipy.special
@@ -89,10 +90,11 @@ def generate_psf(config):
     - z_stop: float (end of z-stack)
     - z_step: float (step size for z-stack)
     - output_filename: str (optional, default 'psf_z.mat')
+    - psf_images_path: str (optional, directory to save PNG images)
     """
-    
+
     # Extract parameters from config
-    psf_width_pixels = config['psf_width_pixels']
+    psf_width_pixels = config['psf_keep_radius'] * 2 + 1  # Ensure odd size
     pixel_size_meters = config['px']
     wavelength = config['wavelength']
     numerical_aperture = config['numerical_aperture']
@@ -101,21 +103,33 @@ def generate_psf(config):
     # Define Z-depth range based on config
     z_start = config.get('z_start', 0)
     z_stop = config.get('z_stop', 4.1e-5)
-    z_step = config.get('px', 1e-6)
+    z_step = config.get('z_step', 1e-6)
     
-    # Note: adding z_step/100 to stop ensures the last value is included if it matches the step exactly
-    z_depth = np.arange(z_start, z_stop + (z_step / 100.0), z_step)
+    z_depth = np.arange(z_start, z_stop, z_step)
     
     # Calculate physical width of PSF
     psf_width_meters = psf_width_pixels * pixel_size_meters
     
     psf_stack = []
     
-    print(f"Generating PSF stack with {len(z_depth)} slices...")
+    psf_images_path = config.get('psf_image_path', None)
+    if psf_images_path is not None:
+        os.makedirs(psf_images_path, exist_ok=True)
     
+    print(f"Generating PSF stack with {len(z_depth)} slices...")
+    if os.path.exists("psf_z.txt"):
+        os.remove("psf_z.txt")
+    # Save config at the start of psf_z.txt
+    with open("psf_z.txt", "w") as log_file:
+        log_file.write("Config:\n")
+        for key, value in config.items():
+            log_file.write(f"{key}: {value}\n")
+        log_file.write("\n")
     for i, z in enumerate(z_depth):
-        if i % 5 == 0: # Print status every 5 slices
-            print(f"Processing slice {i}/{len(z_depth)-1} at Z={z:.2e}")
+        log_msg = f"Processing slice {i}/{len(z_depth)-1} at Z={z:.2e}"
+        print(log_msg)
+        with open("psf_z.txt", "a") as log_file:
+            log_file.write(log_msg + "\n")
             
         slice_psf = get_airy_psf(
             psf_width_pixels, 
@@ -126,6 +140,14 @@ def generate_psf(config):
             refractive_index
         )
         psf_stack.append(slice_psf)
+
+        # Save as 8-bit PNG if path is provided
+        if psf_images_path is not None:
+            psf_8bit = np.clip(slice_psf / np.max(slice_psf) * 255, 0, 255).astype(np.uint8)
+            imageio.imwrite(
+                os.path.join(psf_images_path, f"psf_z_{i:03d}.png"),
+                psf_8bit
+            )
 
     # Save to file
     output_filename = config.get('output_filename', 'psf_z.mat')
