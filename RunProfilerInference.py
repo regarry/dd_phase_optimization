@@ -1,13 +1,14 @@
 import subprocess
 import os
 
+# bsub -n 8 -R "rusage[mem=16GB]" -W 6:00 -q bme_gpu -gpu "num=1:mode=exclusive_process:mps=no" -Is bash
 # conda activate /rsstu/users/a/agrinba/DeepDesign/deepdesign
-# bsub -n 1 -W 6:00 -q bme_gpu -gpu "num=1:mode=exclusive_process:mps=no" -Is bash
+# cd
 # python RunProfilerInference.py
 if __name__ == "__main__":
     # Set your arguments here
-    training_folder = "training_results/800_beads_phase_model_20251021-111735"
-    epoch = 199
+    training_folder = "./training_results/20251211-151155/"
+    epoch = 999
     inference_results = "inference_results/"
     beam_profiles = inference_results
 
@@ -21,9 +22,9 @@ if __name__ == "__main__":
         "--res_dir", inference_results,
         "--num_inferences", "1",
         "--plot_train_loss",
-        "--device", "cpu"
+        "--device", "cuda"
     ]
-    print("Running mask_inference.py...")
+    # print("Running mask_inference.py...")
     subprocess.run(inference_cmd, check=True)
 
     # Run beam_profiler.py

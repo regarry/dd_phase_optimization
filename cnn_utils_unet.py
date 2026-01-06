@@ -46,7 +46,7 @@ class OpticsDesignUnet(nn.Module):
         super(OpticsDesignUnet, self).__init__()
         # adding the physicalLayer into the mix
         self.Nimgs = config['Nimgs']
-        self.physicalLayer = PhysicalLayer(config)
+        self.physicalLayer = PhysicalLayer(config).to(torch.device("cuda:1"))
         self.conv3d = config.get('conv3d', False)  # flag for 3D convolutions
         
         num_classes = config['num_classes']
@@ -112,12 +112,13 @@ class OpticsDesignUnet(nn.Module):
                 in_channels=64, out_channels=num_classes,
                 kernel_size=1
             )
-            
-
-        
 
     def forward(self, mask, xyz):
+        # hard coding cuda device
+        mask = mask.to(torch.device("cuda:1"))
+        xyz = xyz.to(torch.device("cuda:1"))
         im = self.physicalLayer(mask, xyz)
+        im = im.to(torch.device("cuda:0"))
         #im = self.norm(im)
 
         # im_test = im[0,0,:,:]

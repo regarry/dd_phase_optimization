@@ -6,8 +6,10 @@ ntrain: 100               # default 10000 how many bead volumes per epoch
 nvalid: 1                  # default 1000
 batch_size: 1              # Training batch size
 batch_size_gen: 1          # Data generation batch size (default 2)
-max_epochs: 1000
+accumulation_steps: 8     # Gradient accumulation steps to simulate larger batch sizes
+max_epochs: 200
 initial_learning_rate: 0.01
+gradient_checkpointing: true
 
 # Learning Rate Scheduler
 learning_rate_scheduler_factor: 0.1
@@ -53,8 +55,8 @@ phase_mask_upsample_factor: 9 # Scale factor for phase mask upsampling (simulati
 # ==========================================
 #px: 9.2e-6 / 9               # Simulation grid pixel size [m]
 
-# *****************want to change this to input meters not px
-bead_volume: [482, 482, 96] # [x, y, z] volume of imaging in px (camera coordinates)
+# ***************** want to change this to input meters not px
+bead_volume: [482, 482, 20] # [x, y, z] volume of imaging in px (camera coordinates)
 ratio_input_output_image_size: 1 # default with Unet 1, with ResNet 4
 
 # ==========================================
@@ -119,3 +121,8 @@ training_data_path: "training_results"
 #psf_edge_remove: 15
 psf_keep_radius: 15
 z_stop: 50.0e-6           # float (end of z-stack for psf generation)
+
+
+###### MULIT GPU SETUP
+cnn_device: "cuda:0"
+phys_device: "cuda:1"

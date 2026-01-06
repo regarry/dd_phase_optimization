@@ -292,7 +292,7 @@ class PhysicalLayer(nn.Module):
         data_path = self.config['data_path']
         image_volume = config['image_volume']
         psf_keep_radius = config['psf_keep_radius']
-        device = config['device']
+        #device = config['device']
         self.lens_approach = config['lens_approach']
         if self.lens_approach == 'fresnel':
             max_intensity = config.get('max_intensity_fresnel', 5.0e+4)
@@ -300,7 +300,7 @@ class PhysicalLayer(nn.Module):
             max_intensity = config.get('max_intensity_conv', 8.0e+10)
         else:
             max_intensity = config.get('max_intensity_conv', 8.0e+10)    
-        self.device = device
+        #self.device = device
         self.psf_keep_radius = psf_keep_radius
         self.max_intensity = torch.tensor(max_intensity)
         self.counter = 0
@@ -352,15 +352,15 @@ class PhysicalLayer(nn.Module):
 
         
         # initialize phase mask
-        self.incident_gaussian = 1 * np.exp(-(np.square(X) + np.square(Y)) / (2 * laser_beam_FWHC ** 2))
-        self.incident_gaussian = torch.from_numpy(self.incident_gaussian).type(torch.FloatTensor).to(device)
+        incident_gaussian = 1 * np.exp(-(np.square(X) + np.square(Y)) / (2 * laser_beam_FWHC ** 2))
+        incident_gaussian = torch.from_numpy(incident_gaussian).type(torch.FloatTensor)
         
         # --- Lens 1 (B1) and Propagation Kernel 1 (Q1) ---
         
         C1 = (np.pi / (self.wavelength * self.focal_length_1) * (np.square(X) + np.square(Y))) % (
             2 * np.pi)  # lens function lens as a phase transformer
-        self.B1 = np.exp(-1j * C1)
-        self.B1 = torch.from_numpy(self.B1).type(torch.cfloat).to(device)
+        B1 = np.exp(-1j * C1)
+        B1 = torch.from_numpy(B1).type(torch.cfloat)
     
         # refractive index is of the medium 
         #Q1 = np.exp(1j * (np.pi * self.refractive_index / (self.wavelength * self.focal_length_1)) * (
@@ -369,23 +369,23 @@ class PhysicalLayer(nn.Module):
 
         # --- Lens 2 (B2) and Propagation Kernel 2 (Q2) ---
         C2 = (np.pi / (self.wavelength * self.focal_length_2) * (np.square(X) + np.square(Y))) % (2 * np.pi)
-        self.B2 = np.exp(-1j * C2)
-        self.B2 = torch.from_numpy(self.B2).type(torch.cfloat).to(device)
+        B2 = np.exp(-1j * C2)
+        B2 = torch.from_numpy(B2).type(torch.cfloat)
         
         # lens 3
         C3 = (np.pi / (self.wavelength * self.focal_length_3) * (np.square(X) + np.square(Y))) % (2 * np.pi)
-        self.B3 = np.exp(-1j * C3)
-        self.B3 = torch.from_numpy(self.B3).type(torch.cfloat).to(device)
+        B3 = np.exp(-1j * C3)
+        B3 = torch.from_numpy(B3).type(torch.cfloat)
         
         # lens 4
         C4 = (np.pi / (self.wavelength * self.focal_length_4) * (np.square(X) + np.square(Y))) % (2 * np.pi)
-        self.B4 = np.exp(-1j * C4)
-        self.B4 = torch.from_numpy(self.B4).type(torch.cfloat).to(device)
+        B4 = np.exp(-1j * C4)
+        B4 = torch.from_numpy(B4).type(torch.cfloat)
         
         # lens 5
         C5 = (np.pi / (self.wavelength * self.focal_length_5) * (np.square(X) + np.square(Y))) % (2 * np.pi)
-        self.B5 = np.exp(-1j * C5)
-        self.B5 = torch.from_numpy(self.B5).type(torch.cfloat).to(device)
+        B5 = np.exp(-1j * C5)
+        B5 = torch.from_numpy(B5).type(torch.cfloat)
         
 
         ## Q2 for propagation over self.focal_length_2
@@ -427,10 +427,10 @@ class PhysicalLayer(nn.Module):
             for j in range(len(ALPHA[0])):
                 if 1 - np.square(ALPHA[i][j]) - np.square(BETA[i][j]) > 0:
                     gamma_cust[i, j] = np.sqrt(1 - np.square(ALPHA[i][j]) - np.square(BETA[i][j]))
-        self.gamma_cust = torch.from_numpy(gamma_cust).type(torch.FloatTensor).to(device)
+        gamma_cust = torch.from_numpy(gamma_cust).type(torch.FloatTensor)
 
         # read defocus images
-        self.imgs = []
+        self.psf_imgs = []
         # Cut the PSF images at different planes
         # Load all TIFF images sequentially from the config['data_path'] folder
         
@@ -439,9 +439,9 @@ class PhysicalLayer(nn.Module):
         for idx, fname in enumerate(tiff_files):
             img_path = os.path.join(data_path, fname)
             img = skimage.io.imread(img_path)
-            self.imgs.append(img)
+            self.psf_imgs.append(img)
             print(f"Loaded [{idx}] {fname} with shape {img.shape}")
-        print(f"Total images loaded into self.imgs: {len(self.imgs)}")
+        print(f"Total images loaded into self.imgs: {len(self.psf_imgs)}")
             #plt.imshow(img[center_img + -psf_keep_radius:center_img+psf_keep_radius+1,\
             #                           center_img + -psf_keep_radius:center_img+psf_keep_radius+1])
             #plt.axis('off')  # Turn off axis labels
@@ -449,11 +449,45 @@ class PhysicalLayer(nn.Module):
 
 
 
-        self.blur = BlurLayer(device)
-        self.crop = Croplayer()
-        self.img4dto3d = imgs4dto3d(device)
+        #self.blur = BlurLayer(device)
+        #self.crop = Croplayer()
+        #self.img4dto3d = imgs4dto3d(device)
         self.noise = NoiseLayer(config)
-        self.norm01 = Normalize01()
+        #self.norm01 = Normalize01()
+        # Convert the list of images into a single 3D numpy array first
+        imgs_array = np.array(self.psf_imgs) 
+
+        
+        #---- REGISTER BUFFERS ---
+        
+        # 1. Register the Incident Gaussian Beam
+        self.register_buffer('incident_gaussian', incident_gaussian)
+        
+        self.register_buffer('gpu_psfs', torch.from_numpy(imgs_array).float())
+        
+        self.register_buffer('B1', B1)
+        self.register_buffer('B2', B2)
+        self.register_buffer('B3', B3)
+        self.register_buffer('B4', B4)
+        self.register_buffer('B5', B5)
+        
+        
+        # 3. Register Angular Spectrum Propagation Constant
+        self.register_buffer('gamma_cust', gamma_cust)
+
+        # 4. Register the PSF Image Library
+        # This converts the list of images (self.imgs) into one 3D GPU tensor
+        # Shape: [Num_PSFs, Height, Width]
+        psf_stack = np.array(self.psf_imgs).astype('float32')
+        self.register_buffer('gpu_psfs', torch.from_numpy(psf_stack))
+
+        # 5. Register the Z-Depth List
+        # This allows the forward loop to find PSF indices on the GPU
+        z_depths = torch.tensor(self.config['z_depth_list']).long()
+        self.register_buffer('z_depth_buffer', z_depths)
+
+        # 6. Pre-calculate k (Wave number)
+        self.k = 2 * self.config['refractive_index'] * np.pi / self.wavelength
         
     def circular_aperature(self, arr):
         """
@@ -485,7 +519,7 @@ class PhysicalLayer(nn.Module):
         mask = distances <= radius
 
         # Apply the mask to the array
-        result = arr * mask.to(self.device)
+        result = arr * mask
 
         return result
     
@@ -584,7 +618,7 @@ class PhysicalLayer(nn.Module):
         
         Q = np.exp(1j * self.k / (2 * z * self.px) * (
                     np.square(self.XX) + np.square(self.YY)))  # Fresnel diffraction equation
-        Q = torch.from_numpy(Q).type(torch.cfloat).to(self.device)
+        Q = torch.from_numpy(Q).type(torch.cfloat).to(input_img.device)
 
         if debug:
             # Visualize the phase and magnitude of Q for debugging
@@ -678,7 +712,7 @@ class PhysicalLayer(nn.Module):
         return output_layer
 
     def fourf(self, phase_mask):
-        Ta = torch.exp(1j * phase_mask) # amplitude transmittance (in our case the slm reflectance)
+        Ta = torch.exp(1j * phase_mask).to(phase_mask.device) # amplitude transmittance (in our case the slm reflectance)
         Uo = self.incident_gaussian * Ta # light directly behind the SLM (or in our case reflected from the SLM)
         Ul1 = self.angular_spectrum_propagation(Uo, self.focal_length_1/self.px, debug = False) # light directly infront of the lens
         Ul1_prime = Ul1 * self.B1 # light after the lens
@@ -938,10 +972,10 @@ class PhysicalLayer(nn.Module):
         
         if self.conv3d == False:
             # make a 4D tensor to store the 2D images
-            imgs3D = torch.zeros(Nbatch, self.Nimgs, self.image_volume_size_px[0], self.image_volume_size_px[1]).type(torch.FloatTensor).to(self.device)
+            imgs3D = torch.zeros(Nbatch, self.Nimgs, self.image_volume_size_px[0], self.image_volume_size_px[1]).type(torch.FloatTensor).to(phase_mask.device)
         elif self.conv3d == True and self.Nimgs > 1:
             #make a 5D tensor to store the 3D images
-            imgs3D = torch.zeros(Nbatch, 1, self.Nimgs, self.image_volume_size_px[0], self.image_volume_size_px[1]).type(torch.FloatTensor).to(self.device)
+            imgs3D = torch.zeros(Nbatch, 1, self.Nimgs, self.image_volume_size_px[0], self.image_volume_size_px[1]).type(torch.FloatTensor).to(phase_mask.device)
         else:
             raise ValueError('Nimgs must be > 1 to use conv3d')
         
@@ -964,38 +998,13 @@ class PhysicalLayer(nn.Module):
                     intensity = torch.sum(U1_intensity[0, 0, ycenter_u1_intensity - self.image_volume_size_px[1]:ycenter_u1_intensity + self.image_volume_size_px[1], int((self.N//2-1) + z)]) 
                     intensity = intensity * self.illumination_scaling_factor
                     if self.conv3d == False:
-                        imgs3D[i, l, x_ori - self.psf_keep_radius:x_ori + self.psf_keep_radius  + 1, y - self.psf_keep_radius: y + self.psf_keep_radius + 1] += torch.from_numpy(
-                            self.imgs[abs(z.item()-self.z_depth_list[l])].astype('float32')).type(torch.FloatTensor).to(self.device) * intensity
+                        imgs3D[i, l, x_ori - self.psf_keep_radius:x_ori + self.psf_keep_radius  + 1, y - self.psf_keep_radius: y + self.psf_keep_radius + 1] += \
+                            self.gpu_psfs[abs(z.item()-self.z_depth_list[l])] * intensity
                     
                     elif self.conv3d == True and self.Nimgs > 1:
-                        imgs3D[i, 0, l, x_ori - self.psf_keep_radius:x_ori + self.psf_keep_radius + 1, y - self.psf_keep_radius: y + self.psf_keep_radius + 1] += torch.from_numpy(
-                            self.imgs[abs(z.item()-self.z_depth_list[l])].astype('float32')).type(torch.FloatTensor).to(self.device) * intensity
+                        imgs3D[i, 0, l, x_ori - self.psf_keep_radius:x_ori + self.psf_keep_radius + 1, y - self.psf_keep_radius: y + self.psf_keep_radius + 1] += \
+                            self.gpu_psfs[abs(z.item()-self.z_depth_list[l])] * intensity
 
         noisy_imgs3D = self.noise(imgs3D)
         final_imgs3D = noisy_imgs3D / self.camera_max_adu
         return final_imgs3D
-        # #### AG seems not necessary, since you multiply the gamma_cust with 0
-        #U1 = torch.fft.ifft2(torch.fft.ifftshift(
-        #   torch.fft.fftshift(torch.fft.fft2(output_layer)) * torch.exp(1j * self.k * self.gamma_cust * 0)))
-        #U1 = torch.real(U1 * torch.conj(U1))
-        # #### AG
-
-        # Go over the position of each bead and create the appropriate image
-        # l = 0 the center of the bead volume is focused by the detection obj
-        # l = 1 the focal plane is 1 unit further away from the detection obj
-        # l = -1 the focal plane is 1 unit closer to the detection obj
-        
-        # need to check the normalization here
-            
-        #imgs3D = imgs3D / self.max_intensity
-
-        # Conditionally bypass noise addition during inference if skip_noise flag is set
-        """
-        if self.config.get('skip_noise', False) and not self.training:
-            result = self.norm01(imgs3D)
-            return result, self.Nimgs
-        else:
-            result_noisy = self.noise(imgs3D)
-            result_noisy01 = self.norm01(result_noisy)
-            return result_noisy01
-        """

@@ -132,7 +132,23 @@ def beads_img(config):
         skimage.io.imsave(os.path.join(data_path, 'z' + str(i).zfill(2) + '.tiff'), blurred_img.astype('uint16'))
     return None
 
-
+def print_all_gpu_stats():
+    num_devices = torch.cuda.device_count()
+    print(f"Total GPUs detected: {num_devices}")
+    print("-" * 30)
+    
+    for i in range(num_devices):
+        # Get device name (e.g., 'Tesla V100', 'NVIDIA A100')
+        prop = torch.cuda.get_device_properties(i)
+        
+        allocated = torch.cuda.memory_allocated(i) / 1024**2
+        reserved = torch.cuda.memory_reserved(i) / 1024**2
+        
+        print(f"GPU {i}: {prop.name}")
+        print(f"  Allocated: {allocated:.2f} MB")
+        print(f"  Reserved:  {reserved:.2f} MB")
+        print(f"  Total Cap: {prop.total_memory / 1024**2:.2f} MB")
+        print("-" * 30)
         
 def learn_mask(config,res_dir):
 
@@ -150,7 +166,7 @@ def learn_mask(config,res_dir):
     learning_rate_scheduler_factor = config['learning_rate_scheduler_factor']
     learning_rate_scheduler_patience = config['learning_rate_scheduler_patience']
     learning_rate_scheduler_patience_min_lr = config['learning_rate_scheduler_patience_min_lr']
-    device = config['device']
+    #device = config['device']
     use_unet = config['use_unet']
     #z_spacing = config.get('z_spacing', 0)
     #z_img_mode = config.get('z_img_mode', 'edgecenter')
@@ -168,6 +184,7 @@ def learn_mask(config,res_dir):
     wavelength = config['wavelength']
     bessel_cone_angle_degrees = config.get('bessel_cone_angle_degrees', 1.0)
     tv_loss_weight = config.get('tv_loss_weight', 0.0)
+    gradient_accumulation_steps = config.get('gradient_accumulation_steps', 1)
     
     # train on GPU if available
     #device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -196,11 +213,7 @@ def learn_mask(config,res_dir):
         
         
     save_png(phase_mask, res_dir, "initial_phase_mask", config)
-    phase_mask = torch.from_numpy(phase_mask).type(torch.FloatTensor).to(device)
-    mask_param = nn.Parameter(phase_mask)
-    mask_param.requires_grad_()
     
-
     # I don't know what goes in here so I commented it out - ryan
     #if not (os.path.isdir(path_save)):
     #    os.mkdir(path_save)
@@ -253,30 +266,37 @@ def learn_mask(config,res_dir):
         print('CNN architecture')
 
     print('=' * 20)
-
-    cnn.to(device)
+    cnn_device_name = config.get("cnn_device", "cuda:0")
+    cnn_device = torch.device(cnn_device_name)
+    phys_device_name = config.get("phys_device", "cuda:0")
+    phys_device = torch.device(phys_device_name)
+    cnn.to(cnn_device)
+    cnn.physicalLayer.to(phys_device)
+    
+    phase_mask = torch.from_numpy(phase_mask).type(torch.FloatTensor).to(cnn_device)
+    mask_param = nn.Parameter(phase_mask)
 
     # adam optimizer
     optimizer = Adam(list(cnn.parameters()) + [mask_param], lr=initial_learning_rate)
     # learning rate scheduler for now
-    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=learning_rate_scheduler_factor,\
-                                  patience=learning_rate_scheduler_patience, verbose=True, 
-                                  min_lr=learning_rate_scheduler_patience_min_lr)
+    #scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=learning_rate_scheduler_factor,\
+    #                              patience=learning_rate_scheduler_patience, verbose=True, 
+    #                              min_lr=learning_rate_scheduler_patience_min_lr)
     
     # loss function
     #criterion = KDE_loss3D(100.0)
     if num_classes > 1:
-        weights = torch.tensor(weights).to(device)
-        if focal_loss:
-            criterion = lambda outputs, targets: multiclass_focal_loss(
-            outputs, targets, num_classes=num_classes, alpha=weights, reduction="mean"
-            )
-        else:
-            criterion = nn.CrossEntropyLoss(weight=weights).to(device)
+        weights = torch.tensor(weights)
+        #if focal_loss:
+        #    criterion = lambda outputs, targets: multiclass_focal_loss(
+        #    outputs, targets, num_classes=num_classes, alpha=weights, reduction="mean"
+        #    )
+        #else:
+        criterion = nn.CrossEntropyLoss(weight=weights).to(cnn_device)
         # 0 = background, 1 = bead
         # 2 = between beads
     else: 
-        criterion = nn.BCEWithLogitsLoss().to(device)
+        criterion = nn.BCEWithLogitsLoss().to(cnn_device)
         
     tv_loss_module = TotalVariationLoss(weight=tv_loss_weight)
     # Model layers and number of parameters
@@ -311,9 +331,9 @@ def learn_mask(config,res_dir):
             for batch_index, (xyz, targets) in enumerate(training_generator):
                 #return xyz_np
                 # transfer data to variable on GPU
-                targets = targets.to(device)
+                targets = targets.to(cnn_device)
                 #Nphotons = Nphotons.to(device)
-                xyz = xyz.to(device)
+                xyz = xyz.to(cnn_device)
                 
                 # squeeze batch dimension
                 targets = targets.squeeze(0)
@@ -328,7 +348,7 @@ def learn_mask(config,res_dir):
                 # print(targets.shape)
                 # forward + backward + optimize
                 #img = torch.zeros((batch_size_gen,1,500,500)).type(torch.FloatTensor).to(device)
-                optimizer.zero_grad()
+                
                 outputs = cnn(mask_param,xyz)
                 # get the phase mask from model
                 #return targets
@@ -337,7 +357,10 @@ def learn_mask(config,res_dir):
                 total_loss = loss + loss_tv
                 
                 total_loss.backward(retain_graph=True)
-                optimizer.step() 
+                print_all_gpu_stats()
+                if (batch_index + 1) % gradient_accumulation_steps == 0:
+                    optimizer.step() 
+                    optimizer.zero_grad(set_to_none=True)
                 """
                 # --- Add this section to inspect gradients ---
                 if mask_param.grad is not None:
@@ -369,8 +392,11 @@ def learn_mask(config,res_dir):
         if epoch % 5 == 0 or epoch == 0:
             torch.save(cnn.state_dict(),os.path.join(res_dir, 'net_{}.pt'.format(epoch)))
         save_png(mask_param.detach(), res_dir, str(epoch).zfill(3), config)
-       #save_png(mask_param, res_dir, str(epoch).zfill(3), config)
+        #save_png(mask_param, res_dir, str(epoch).zfill(3), config)
         savePhaseMask(mask_param, epoch, res_dir)
+        print_all_gpu_stats()
+        torch.cuda.empty_cache()
+        print_all_gpu_stats()
     torch.save(cnn.state_dict(), os.path.join(res_dir, 'net_{}.pt'.format(epoch)))
     return labels
 
@@ -379,7 +405,7 @@ if __name__ == '__main__':
     parser.add_argument('-c', '--config', default='config.yaml', help='Path to config yaml')
     args = parser.parse_args()
     
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    #device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     config = load_config(args.config)
     config['px'] = config['slm_px'] / config['phase_mask_upsample_factor']
     psf_keep_radius = config['psf_keep_radius']
@@ -408,7 +434,7 @@ if __name__ == '__main__':
     if num_classes > 1:
         assert z_coupled_ratio > 0 and z_coupled_spacing_range[0] > 0, "z_coupled_ratio and z_coupled_spacing_range should be set for multi class imgs"
     
-    config['device'] = device
+    #config['device'] = device
     
     # Set the random seed
     random_seed = config['random_seed']

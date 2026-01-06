@@ -40,6 +40,7 @@ def main():
     bessel_angle = config['bessel_cone_angle_degrees']
     config['device'] = 'cuda' if torch.cuda.is_available() else 'cpu'
     device = config['device']
+    phase_mask_upsample_factor = config.get('phase_mask_upsample_factor', 1)
     config["phase_mask_file"] = args.mask
     asm = config.get('angular_spectrum_method', True)
     initial_phase_mask = config.get('initial_phase_mask', "")
@@ -120,6 +121,12 @@ def main():
     #lens_approach = 'fourier_lens'  # temporarily force fourier lens for testing
     phys_layer = PhysicalLayer(config)
     phys_layer.eval()
+    if phase_mask_upsample_factor > 1:
+        mask_tensor = torch.from_numpy(mask_np).type(torch.FloatTensor).to(device)
+        mask_tensor = PhysicalLayer.expand_matrix_kron_torch(mask_tensor, phase_mask_upsample_factor)
+    else:
+        mask_tensor = torch.from_numpy(mask_np).type(torch.FloatTensor).to(device)
+    
     with torch.no_grad():
         if lens_approach == 'against_lens':
             print("are you sure you didnt mean fourier lens?")

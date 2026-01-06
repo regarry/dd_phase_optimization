@@ -3,12 +3,13 @@
 #BSUB -W 96:00
 #BSUB -R "rusage[mem=48GB]"
 #BSUB -q bme_gpu
-#BSUB -gpu "num=1:mode=exclusive_process:mps=no"
+#BSUB -gpu "num=2:mode=exclusive_process:mps=no"
 ##BSUB -R "select[hname!=gpu18]"
 #BSUB -J psf_test
 #BSUB -o ./logs/.%J
 #BSUB -e ./logs/.%J
 nvidia-smi
+nvidia-smi topo -m
 
 module load conda
 module load cuda/12.3

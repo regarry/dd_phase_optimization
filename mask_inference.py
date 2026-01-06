@@ -90,7 +90,7 @@ def main():
     config = load_config(config_path)
     config['device'] = torch.device(args.device if torch.cuda.is_available() else "cpu")
     config['inference_epoch'] = args.epoch
-    config["phase_mask_pixel_size"] = 1152 
+    #config["phase_mask_pixel_size"] = 1152 
     #display = slice(None) if config[""] == 1 else 0 # Display the first image in the batch; slice(None) for whole array
     if args.max_intensity:
         config['max_intensity'] = args.max_intensity
