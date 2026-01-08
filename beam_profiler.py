@@ -19,9 +19,9 @@ def main():
     args = parser.parse_args()
 
     # Create a timestamped subfolder output dir
-    input_timestamp_epoch = extract_datetime_and_epoch(args.mask)
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    output_subdir = os.path.join(args.output_dir, input_timestamp_epoch,timestamp)
+    #input_timestamp_epoch = extract_datetime_and_epoch(args.mask)
+    #timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    output_subdir = os.path.join(args.output_dir, "beam_profile")
     os.makedirs(output_subdir, exist_ok=True)
     print(f"Output directory: {output_subdir}")
     if args.mask and not args.config:
@@ -38,8 +38,8 @@ def main():
     wavelength_nm = config['wavelength'] * 1e9 # wavelength in nm
     beam_fwhm = config['laser_beam_FWHC']
     bessel_angle = config['bessel_cone_angle_degrees']
-    config['device'] = 'cuda' if torch.cuda.is_available() else 'cpu'
-    device = config['device']
+    #config['device'] = 'cuda' if torch.cuda.is_available() else 'cpu'
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     phase_mask_upsample_factor = config.get('phase_mask_upsample_factor', 1)
     config["phase_mask_file"] = args.mask
     asm = config.get('angular_spectrum_method', True)
@@ -119,7 +119,8 @@ def main():
     lens_approach = config['lens_approach']
     # to test 9f try running results with fourier lens
     #lens_approach = 'fourier_lens'  # temporarily force fourier lens for testing
-    phys_layer = PhysicalLayer(config)
+    
+    phys_layer = PhysicalLayer(config).to(device)
     phys_layer.eval()
     if phase_mask_upsample_factor > 1:
         mask_tensor = torch.from_numpy(mask_np).type(torch.FloatTensor).to(device)
@@ -146,10 +147,8 @@ def main():
         output_layer = output_layer.squeeze()
 
         print("Generating beam profile...")
-        output_beam_sections_dir = os.path.join(output_subdir, "beam_sections")
-        os.makedirs(output_beam_sections_dir, exist_ok=True)
         beam_profile, intensity_profile = phys_layer.generate_beam_cross_section(
-            output_layer, output_beam_sections_dir,
+            output_layer, output_subdir,
             (z_min_pixels, z_max_pixels, z_step_pixels),
             (y_min_pixels, y_max_pixels), asm = asm
         )
@@ -178,7 +177,7 @@ def main():
         y_range_mm = np.linspace(y_min_mm, y_max_mm, y_max_pixels - y_min_pixels + 1) 
 
         plt.title(
-            f"Timestamp: {timestamp}\n"
+            #f"Timestamp: {timestamp}\n"
             #f"z: {z_min_mm:.2f}mm-{z_max_mm:.2f}mm, steps={num_z_steps},\n"
             #f"axicon angle={bessel_angle}°, \n"
             #f"lens={lens_approach}, \n"

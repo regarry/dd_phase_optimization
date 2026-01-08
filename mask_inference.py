@@ -88,7 +88,7 @@ def main():
     # Load configuration and set device
     config_path = os.path.join(args.input_dir, "config.yaml")
     config = load_config(config_path)
-    config['device'] = torch.device(args.device if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     config['inference_epoch'] = args.epoch
     #config["phase_mask_pixel_size"] = 1152 
     #display = slice(None) if config[""] == 1 else 0 # Display the first image in the batch; slice(None) for whole array
@@ -108,28 +108,30 @@ def main():
     # Load mask from tiff file (for both models)
     mask_path = find_image_with_wildcard(args.input_dir, f"mask_phase_epoch_{args.epoch-1}", "tiff")
     mask_np = skimage.io.imread(mask_path)
-    mask_tensor = torch.from_numpy(mask_np).type(torch.FloatTensor).to(config['device'])
+    mask_tensor = torch.from_numpy(mask_np).type(torch.FloatTensor).to(device)
     mask_param = torch.nn.Parameter(mask_tensor, requires_grad=False)
 
     # Pre-load paper mask if provided
     if args.paper_mask:
         paper_mask_np = skimage.io.imread(args.paper_mask)
-        paper_mask_tensor = torch.from_numpy(paper_mask_np).type(torch.FloatTensor).to(config['device'])
+        paper_mask_tensor = torch.from_numpy(paper_mask_np).type(torch.FloatTensor).to(device)
         paper_mask_param = torch.nn.Parameter(paper_mask_tensor, requires_grad=False)
 
     # Load labels
     labels_path = os.path.join(args.input_dir, "labels.pickle")
+    ntrain = config['ntrain']
+    nvalid = config['nvalid']
     with open(labels_path, 'rb') as f:
         labels_dict = pickle.load(f)
     all_keys = sorted(labels_dict.keys(), key=lambda x: int(x))
-    if args.num_inferences > 0 and args.num_inferences < len(all_keys):
-        indices = np.linspace(0, len(all_keys)-1, args.num_inferences).astype(int)
+    if args.num_inferences > 0 and args.num_inferences < nvalid + 1:
+        indices = np.linspace(ntrain, len(all_keys)-1, args.num_inferences).astype(int)
         selected_keys = [all_keys[i] for i in indices]
     else:
         selected_keys = all_keys
 
     # Instantiate PhysicalLayer model (no checkpoint loading assumed)
-    phys_model = PhysicalLayer(config).to(config['device'])
+    phys_model = PhysicalLayer(config).to(device)
     phys_model.eval()
 
     # Instantiate CNN model based on config and load checkpoint
@@ -141,8 +143,8 @@ def main():
     else:
         cnn_model = OpticsDesignCNN(cnn_config)
         print("Instantiated OpticsDesignCNN")
-    cnn_model.to(config['device'])
-    cnn_model.load_state_dict(torch.load(args.model_path, map_location=config['device']))
+    cnn_model.to(device)
+    cnn_model.load_state_dict(torch.load(args.model_path, map_location=device))
     cnn_model.eval()
     """ for layer in cnn_model.modules():
         if isinstance(layer, nn.Conv2d):
@@ -171,8 +173,8 @@ def main():
         fourier_lens_phys_model = phys_model
     """
     # Create output directory for inference results using current datetime.
-    dt_str = datetime.now().strftime("%Y%m%d-%H%M%S")
-    out_dir = os.path.join(args.res_dir, dt_str)
+    #dt_str = datetime.now().strftime("%Y%m%d-%H%M%S")
+    out_dir = os.path.join(args.res_dir, "inference")
     # create dir if it does not exist
     print(f"Output directory: {out_dir}")
     if not os.path.exists(out_dir):
@@ -230,7 +232,7 @@ def main():
     for batch in selected_keys:
         data = labels_dict[batch]
         xyz_np = data['xyz']
-        xyz = torch.tensor(xyz_np, dtype=torch.float32).to(config['device'])
+        xyz = torch.tensor(xyz_np, dtype=torch.float32).to(device)
         xyz_between_beads = data['xyz_between_beads']
 
         # Physical layer inference
@@ -296,7 +298,7 @@ def main():
 
         # Paper mask inference
         if args.paper_mask:
-            paper_mask_param = paper_mask_param.to(config['device'])
+            paper_mask_param = paper_mask_param.to(device)
             paper_phys_img = run_inference(fourier_lens_phys_model, paper_mask_param, xyz)
             img_save_tiff(paper_phys_img, out_dir, "paper_mask_camera", batch)
             if num_classes == 1:
@@ -330,12 +332,12 @@ def main():
             test_config['focal_length_2'] = 0.750e-3
             test_config['phase_mask_pixel_size'] = 1152
             #fourier_lens_config["illumination_scaling_factor"] = 1.0e-6
-            test_phys_model = PhysicalLayer(test_config).to(config['device'])
+            test_phys_model = PhysicalLayer(test_config).to(device)
             test_phys_model.eval()
             #generate reticle
             input = generate_reticle_image(config["N"])
             # convert to tensor
-            input = torch.from_numpy(input).type(torch.FloatTensor).to(config['device'])
+            input = torch.from_numpy(input).type(torch.FloatTensor).to(device)
             output = test_phys_model.test_fourf(input)
             output_intensity = torch.abs(output)**2
             # save input image

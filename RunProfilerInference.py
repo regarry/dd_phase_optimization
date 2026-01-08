@@ -1,5 +1,6 @@
 import subprocess
 import os
+from datetime import datetime
 
 # bsub -n 8 -R "rusage[mem=16GB]" -W 6:00 -q bme_gpu -gpu "num=1:mode=exclusive_process:mps=no" -Is bash
 # conda activate /rsstu/users/a/agrinba/DeepDesign/deepdesign
@@ -7,9 +8,10 @@ import os
 # python RunProfilerInference.py
 if __name__ == "__main__":
     # Set your arguments here
-    training_folder = "./training_results/20251211-151155/"
-    epoch = 999
-    inference_results = "inference_results/"
+    training_folder = "./training_results/20260107-143715"
+    epoch = 95
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    inference_results = os.path.join(training_folder, timestamp)
     beam_profiles = inference_results
 
     mask_file = os.path.join(training_folder, f"mask_phase_epoch_{epoch}.tiff")
@@ -20,12 +22,11 @@ if __name__ == "__main__":
         "--input_dir", training_folder,
         "--epoch", str(epoch),
         "--res_dir", inference_results,
-        "--num_inferences", "1",
-        "--plot_train_loss",
-        "--device", "cuda"
+        "--num_inferences", "5",
+        "--plot_train_loss"
+        #"--device", "cuda"
     ]
-    # print("Running mask_inference.py...")
-    subprocess.run(inference_cmd, check=True)
+    
 
     # Run beam_profiler.py
     profiler_cmd = [
@@ -36,3 +37,8 @@ if __name__ == "__main__":
     
     print("Running beam_profiler.py...")
     subprocess.run(profiler_cmd, check=True)
+    print("Beam profiling completed.")
+    
+    print("Running mask_inference.py...")
+    subprocess.run(inference_cmd, check=True)
+    print("Inference completed.")

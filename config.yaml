@@ -2,14 +2,14 @@
 # 1. OPTIMIZATION & TRAINING LOOP
 # ==========================================
 random_seed: 1234
-ntrain: 100               # default 10000 how many bead volumes per epoch
-nvalid: 1                  # default 1000
+ntrain: 1000              # default 10000 how many bead volumes per epoch
+nvalid: 10                  # default 1000
 batch_size: 1              # Training batch size
-batch_size_gen: 1          # Data generation batch size (default 2)
-accumulation_steps: 8     # Gradient accumulation steps to simulate larger batch sizes
-max_epochs: 200
-initial_learning_rate: 0.01
-gradient_checkpointing: true
+#batch_size_gen: 1          # Data generation batch size (default 2)
+accumulation_steps: 32     # Gradient accumulation steps to simulate larger batch sizes
+max_epochs: 100
+initial_learning_rate: 1.0e-4
+gradient_checkpointing: False
 
 # Learning Rate Scheduler
 learning_rate_scheduler_factor: 0.1
@@ -46,9 +46,9 @@ aperature: False           # Typo in original (aperture), keeping as is for code
 # 3. SLM & PHASE MASK
 # ==========================================
 slm_px: 9.2e-6             # Physical pixel size of the SLM [m]
-phase_mask_pixel_size: 256 # Number of pixels on the SLM side (resolution)
+phase_mask_pixel_size: 1024 # Number of pixels on the SLM side (resolution)
 initial_phase_mask: "empty"
-phase_mask_upsample_factor: 9 # Scale factor for phase mask upsampling (simulation vs physical)
+phase_mask_upsample_factor: 1 # Scale factor for phase mask upsampling (simulation vs physical)
 
 # ==========================================
 # 4. SIMULATION GRID & RESOLUTION
@@ -62,7 +62,7 @@ ratio_input_output_image_size: 1 # default with Unet 1, with ResNet 4
 # ==========================================
 # 5. BEAD & SAMPLE GENERATION
 # ==========================================
-num_particles_range: [200, 201] # [min, max] emitters per image. Strong GPU: [450, 550]
+num_particles_range: [800, 801] # [min, max] emitters per image. Strong GPU: [450, 550]
 bead_radius: 1.0           # pixels 1.0 default
 #particle_spatial_range_xy: [15, 985] # [min, max] px, to avoid edges (default 200 um volume)
 #particle_spatial_range_z: [-49, 49, 1] # [start, stop, step] px

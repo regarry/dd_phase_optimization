@@ -34,6 +34,41 @@ from bessel import generate_axicon_phase_mask
 # sudo killall nautilus
 # conda activate /rsstu/users/a/agrinba/DeepDesign/deepdesign
 # nohup python mask_learning.py &> ./logs/$(date +'%Y%m%d-%H%M%S').txt &
+
+class MemorySnapshot:
+    """
+    Context manager that records GPU memory history and dumps a snapshot
+    if an error occurs (or optionally at the end).
+    """
+    def __init__(self, filename="memory_snapshot.pickle", max_entries=100000):
+        self.filename = filename
+        self.max_entries = max_entries
+
+    def __enter__(self):
+        # 1. Start recording memory history
+        # (This is low overhead, unlike the Profiler)
+        torch.cuda.memory._record_memory_history(max_entries=self.max_entries)
+        print(f"🔴 Memory recording started. Snapshot will save to '{self.filename}' on crash.")
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        # 2. Stop recording
+        torch.cuda.memory._record_memory_history(enabled=None)
+        
+        # 3. If there was an exception (CRASH), dump the snapshot
+        if exc_type:
+            print(f"\n💥 Crash detected: {exc_val}")
+            print(f"💾 Dumping memory snapshot to {self.filename}...")
+            try:
+                torch.cuda.memory._dump_snapshot(self.filename)
+                print("✅ Snapshot saved successfully.")
+            except Exception as e:
+                print(f"❌ Failed to save snapshot: {e}")
+        
+        # Optional: You can uncomment this if you want a snapshot even on success
+        else:
+            torch.cuda.memory._dump_snapshot(self.filename)
+
 def list_to_range(lst):
     if len(lst) == 1:
         return range(lst[0])
@@ -46,7 +81,7 @@ def list_to_range(lst):
 def gen_data(config, res_dir):
     ntrain = config['ntrain']
     nvalid = config['nvalid']
-    batch_size_gen = config['batch_size_gen']
+    batch_size = config['batch_size']
     particle_spatial_range_xy = list_to_range(config['particle_spatial_range_xy'])
     particle_spatial_range_z = list_to_range(config['particle_spatial_range_z'])
     num_particles_range = config['num_particles_range']
@@ -74,22 +109,22 @@ def gen_data(config, res_dir):
     # locations for phase mask learning are saved in batches of 16 for convenience
 
     # calculate the number of training batches to sample
-    ntrain_batches = int(ntrain / batch_size_gen)
+    ntrain_batches = int(ntrain / batch_size)
 
     # generate examples for training
     labels_dict = {}
     for i in range(ntrain_batches):
         # sample a training example
-        xyz, xyz_between_beads = generate_batch(batch_size_gen, num_particles_range, particle_spatial_range_xy,
+        xyz, xyz_between_beads = generate_batch(batch_size, num_particles_range, particle_spatial_range_xy,
                                        particle_spatial_range_z, z_coupled_ratio, 
                                        z_coupled_spacing_range)
         labels_dict[str(i)] = {'xyz': xyz, 'xyz_between_beads': xyz_between_beads}
         # print number of example
         print('Training Example [%d / %d]' % (i + 1, ntrain_batches))
 
-    nvalid_batches = int(nvalid / batch_size_gen)
+    nvalid_batches = int(nvalid / batch_size)
     for i in range(nvalid_batches):
-        xyz, xyz_between_beads = generate_batch(batch_size_gen, num_particles_range, particle_spatial_range_xy,
+        xyz, xyz_between_beads = generate_batch(batch_size, num_particles_range, particle_spatial_range_xy,
                                        particle_spatial_range_z, z_coupled_ratio, 
                                        z_coupled_spacing_range)
         labels_dict[str(i + ntrain_batches)] = {'xyz': xyz, 'xyz_between_beads': xyz_between_beads}
@@ -155,7 +190,7 @@ def learn_mask(config,res_dir):
     #Unpack parameters
     ntrain = config['ntrain']
     nvalid = config['nvalid']
-    batch_size_gen = config['batch_size_gen']
+    #batch_size_gen = config['batch_size_gen']
     initial_learning_rate = config['initial_learning_rate']
     batch_size = config['batch_size']
     max_epochs = config['max_epochs']
@@ -163,9 +198,9 @@ def learn_mask(config,res_dir):
     #psf_width_meters = config['psf_width_pixels'] * config['px']
     #path_save = config['path_save']
     #path_train = config['path_train']
-    learning_rate_scheduler_factor = config['learning_rate_scheduler_factor']
-    learning_rate_scheduler_patience = config['learning_rate_scheduler_patience']
-    learning_rate_scheduler_patience_min_lr = config['learning_rate_scheduler_patience_min_lr']
+    #learning_rate_scheduler_factor = config['learning_rate_scheduler_factor']
+    #learning_rate_scheduler_patience = config['learning_rate_scheduler_patience']
+    #learning_rate_scheduler_patience_min_lr = config['learning_rate_scheduler_patience_min_lr']
     #device = config['device']
     use_unet = config['use_unet']
     #z_spacing = config.get('z_spacing', 0)
@@ -237,8 +272,8 @@ def learn_mask(config,res_dir):
     # parameters for data loaders batch size is 1 because examples are generated 16 at a time
     params_train = {'batch_size': batch_size, 'shuffle': True}
     #params_valid = {'batch_size': batch_size, 'shuffle': False}
-    ntrain_batches = int(ntrain/batch_size_gen)
-    nvalid_batches = int(nvalid/batch_size_gen)
+    ntrain_batches = int(ntrain/batch_size)
+    nvalid_batches = int(nvalid/batch_size)
     steps_per_epoch = ntrain_batches
 
     # partition built in simulation
@@ -327,6 +362,8 @@ def learn_mask(config,res_dir):
         cnn.train()
         train_loss = 0.0
         #train_jacc = 0.0
+        #snapshot_file = os.path.join(res_dir, "memory_snapshot.pickle")
+        #with MemorySnapshot(snapshot_file):
         with torch.set_grad_enabled(True):
             for batch_index, (xyz, targets) in enumerate(training_generator):
                 #return xyz_np
@@ -383,10 +420,12 @@ def learn_mask(config,res_dir):
                 
                 # print training loss
                 print('Epoch [%d/%d], Iter [%d/%d], Loss: %.4f\n' % (epoch+1,
-                      num_epochs, batch_index+1, steps_per_epoch, loss.item()))
+                    num_epochs, batch_index+1, steps_per_epoch, loss.item()))
                 
                 #if batch_ind % 1000 == 0:
-                #    savePhaseMask(mask_param,batch_ind,epoch,res_dir)       
+                #    savePhaseMask(mask_param,batch_ind,epoch,res_dir) 
+                        
+        #exit()
         train_losses.append(train_loss)
         np.savetxt(os.path.join(res_dir,'train_losses.txt'),train_losses,delimiter=',')
         if epoch % 5 == 0 or epoch == 0:

@@ -352,6 +352,8 @@ class PhysicalLayer(nn.Module):
 
         
         # initialize phase mask
+        if self.lens_approach == 'lazy_4f':
+            pass 
         incident_gaussian = 1 * np.exp(-(np.square(X) + np.square(Y)) / (2 * laser_beam_FWHC ** 2))
         incident_gaussian = torch.from_numpy(incident_gaussian).type(torch.FloatTensor)
         
@@ -724,6 +726,19 @@ class PhysicalLayer(nn.Module):
        
         return output_layer
     
+    def lazy_fourf(self, phase_mask):
+        Ta = torch.exp(1j * phase_mask).to(phase_mask.device) # amplitude transmittance (in our case the slm reflectance)
+        Uo = self.incident_gaussian * Ta # light directly behind the SLM (or in our case reflected from the SLM)
+        magnification_factor = self.focal_length_2 / self.focal_length_1
+        scale_factor = self.phase_mask_upsample_factor * magnification_factor
+        U1 = F.interpolate(
+            Uo[None, None, :, :], 
+            scale_factor=scale_factor, 
+            mode='bilinear', 
+            align_corners=False
+            )   
+        return U1
+    
     def fivef(self, phase_mask):
         Ta = torch.exp(1j * phase_mask) # amplitude transmittance (in our case the slm reflectance)
         Uo = self.incident_gaussian * Ta # light directly behind the SLM (or in our case reflected from the SLM)
@@ -803,14 +818,15 @@ class PhysicalLayer(nn.Module):
         
         Args:
             initial_field (np.ndarray): The complex field at z=0.
-            output_folder (str): Folder to save 2D intensity profiles at each z-step.
+            output_folder (str): root Folder to save 2D intensity profiles at each z-step.
             z_range_px (tuple): (min, max) propagation distance in pixels.
             y_slice_px (tuple): (min, max) slice of the y-axis in pixels.
             
         Returns:
             np.ndarray: A 2D array representing the beam's cross-section (ZY plane).
         """
-        os.makedirs(output_folder, exist_ok=True)
+        output_beam_sections_dir = os.path.join(output_folder, "beam_sections")
+        os.makedirs(output_beam_sections_dir, exist_ok=True)
         z_min_px, z_max_px, z_step = z_range_px
         y_min_px, y_max_px = y_slice_px
         
@@ -851,7 +867,7 @@ class PhysicalLayer(nn.Module):
         for i, z_px in enumerate(range(z_min_px, z_max_px, z_step)):
             # Save the full 2D intensity profile at the current z-step
             z_mm = z_px*self.px*1.0e3
-            save_path = os.path.join(output_folder, f'intensity_{i:04d}_{z_mm:.2f}.tiff')
+            save_path = os.path.join(output_beam_sections_dir, f'intensity_{i:04d}_{z_mm:.2f}.tiff')
             #print(f'{i} {z_px}')
             skimage.io.imsave(save_path, intensity_at_z[i])
         
@@ -919,10 +935,11 @@ class PhysicalLayer(nn.Module):
 
     def forward(self, phase_mask, xyz):
         Nbatch, Nemitters = xyz.shape[0], xyz.shape[1]
-        if self.phase_mask_upsample_factor > 1:
-            phase_mask_upsampled = self.expand_matrix_kron_torch(phase_mask, self.phase_mask_upsample_factor)
-        else:
-            phase_mask_upsampled = phase_mask
+        if not self.lens_approach == 'lazy_4f':
+            if self.phase_mask_upsample_factor > 1:
+                phase_mask_upsampled = self.expand_matrix_kron_torch(phase_mask, self.phase_mask_upsample_factor)
+            else:
+                phase_mask_upsampled = phase_mask
         """    
         if self.lens_approach == 'fresnel':
             mask_param = self.incident_gaussian * torch.exp(1j * phase_mask_upsampled)
@@ -955,6 +972,9 @@ class PhysicalLayer(nn.Module):
         elif self.lens_approach == '4f':
             output_layer = self.fourf(phase_mask_upsampled)
             
+        elif self.lens_approach == 'lazy_4f':
+            output_layer = self.lazy_fourf(phase_mask) 
+               
         elif self.lens_approach == '9f':
             output_layer = self.ninef(phase_mask_upsampled)
             
@@ -978,6 +998,8 @@ class PhysicalLayer(nn.Module):
             imgs3D = torch.zeros(Nbatch, 1, self.Nimgs, self.image_volume_size_px[0], self.image_volume_size_px[1]).type(torch.FloatTensor).to(phase_mask.device)
         else:
             raise ValueError('Nimgs must be > 1 to use conv3d')
+        # find all of the unique x values and compute intensity where x = xyz[i, j, 0].type(torch.LongTensor) - self.image_volume_size_px[0]//2 
+        # x = xyz[i, j, 0].type(torch.LongTensor) - self.image_volume_size_px[0]//2
         
         for l in range(self.Nimgs):
             for i in range(Nbatch):

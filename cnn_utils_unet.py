@@ -46,8 +46,12 @@ class OpticsDesignUnet(nn.Module):
         super(OpticsDesignUnet, self).__init__()
         # adding the physicalLayer into the mix
         self.Nimgs = config['Nimgs']
-        self.physicalLayer = PhysicalLayer(config).to(torch.device("cuda:1"))
+        self.physicalLayer = PhysicalLayer(config)
         self.conv3d = config.get('conv3d', False)  # flag for 3D convolutions
+        cnn_device_name = config.get("cnn_device", "cuda:0")
+        self.cnn_device = torch.device(cnn_device_name)
+        phys_device_name = config.get("phys_device", "cuda:0")
+        self.phys_device = torch.device(phys_device_name)
         
         num_classes = config['num_classes']
         dropout = config.get('dropout', 0.0)  # dropout value from config
@@ -115,10 +119,14 @@ class OpticsDesignUnet(nn.Module):
 
     def forward(self, mask, xyz):
         # hard coding cuda device
-        mask = mask.to(torch.device("cuda:1"))
-        xyz = xyz.to(torch.device("cuda:1"))
+        # only change device for training otherwise conditional statement to run on cuda then cpu if cuda not avaialble
+        if self.training:
+            mask = mask.to(self.phys_device)
+            xyz = xyz.to(self.phys_device)
         im = self.physicalLayer(mask, xyz)
-        im = im.to(torch.device("cuda:0"))
+        
+        if self.training:
+            im = im.to(self.cnn_device)
         #im = self.norm(im)
 
         # im_test = im[0,0,:,:]
