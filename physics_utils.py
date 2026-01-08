@@ -1003,7 +1003,7 @@ class PhysicalLayer(nn.Module):
         
         for l in range(self.Nimgs):
             for i in range(Nbatch):
-                for j in range(Nemitters):
+                for j in range(Nemitters): # split this into two models
                     # change x value to fit different field of view
                     x = xyz[i, j, 0].type(torch.LongTensor) - self.image_volume_size_px[0]//2
                     y = xyz[i, j, 1].type(torch.LongTensor)
