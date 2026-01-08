@@ -4,3 +4,8 @@ __pycache__/
 output_layer_imgs/
 results/
 traininglocations/
+training_results/
+inference_results/
+beam_profiles/
+logs/
+psf_images/
