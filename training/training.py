@@ -1,4 +1,7 @@
 import os
+import sys
+# Add the parent directory to sys.path so we can import 'data', 'models', etc.
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import argparse
 import numpy as np
 import torch

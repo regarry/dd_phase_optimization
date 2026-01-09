@@ -143,3 +143,17 @@ def extract_datetime_and_epoch(filepath):
     datetime_str = datetime_match.group(1) if datetime_match else None
     epoch_num = int(epoch_match.group(1)) if epoch_match else None
     return f"{datetime_str}-{epoch_num}"
+
+def load_tiff_stack(path):
+    """
+    Reads a TIFF stack from disk.
+    Args:
+        path (str): Path to the .tif file.
+    Returns:
+        np.ndarray: The image stack.
+    """
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"TIFF file not found: {path}")
+    
+    # skimage handles multipage tiffs automatically
+    return skimage.io.imread(path)

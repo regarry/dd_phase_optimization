@@ -1,7 +1,8 @@
 import torch
 import numpy as np
 from torch.utils.data import Dataset
-from .generators import create_random_emitters, batch_xyz_to_boolean_grid, batch_xyz_to_3_class_grid
+from .generators import create_random_emitters
+from .transforms import batch_xyz_to_boolean_grid, batch_xyz_to_3_class_grid
 
 class SyntheticMicroscopeData(Dataset):
     def __init__(self, epoch_length, config):

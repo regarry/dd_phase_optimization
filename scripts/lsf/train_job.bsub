@@ -4,7 +4,7 @@
 #BSUB -R "rusage[mem=16GB]"
 #BSUB -q bme_gpu
 #BSUB -gpu "num=1:mode=exclusive_process:mps=no"
-#BSUB -J mask_learning
+#BSUB -J train_dd
 #BSUB -o ./logs/.%J
 #BSUB -e ./logs/.%J
 nvidia-smi
@@ -23,7 +23,7 @@ echo "--- Config Contents ---"
 cat $CONFIG_FILE
 echo "-----------------------"
 
-conda run -p /rsstu/users/a/agrinba/DeepDesign/deepdesign python ./mask_learning.py --config $CONFIG_FILE
+conda run -p /rsstu/users/a/agrinba/DeepDesign/deepdesign python ./training/training.py --config $CONFIG_FILE
 
 # Optional: Clean up the copied config file
 echo "Cleaning up $CONFIG_FILE"

@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from physics_utils import PhysicalLayer
 import torch.nn.functional as F
 
 # AG This code was taken from
@@ -44,105 +43,111 @@ def double_convolution_3d(in_channels, out_channels, dropout=0.0):
 class OpticsDesignUnet(nn.Module):
     def __init__(self, config):
         super(OpticsDesignUnet, self).__init__()
-        # adding the physicalLayer into the mix
-        self.Nimgs = config['Nimgs']
-        self.physicalLayer = PhysicalLayer(config)
-        self.conv3d = config.get('conv3d', False)  # flag for 3D convolutions
-        cnn_device_name = config.get("cnn_device", "cuda:0")
-        self.cnn_device = torch.device(cnn_device_name)
-        phys_device_name = config.get("phys_device", "cuda:0")
-        self.phys_device = torch.device(phys_device_name)
         
+        self.conv3d = config.get('conv3d', False)
+        self.Nimgs = config.get('Nimgs', 1)
         num_classes = config['num_classes']
-        dropout = config.get('dropout', 0.0)  # dropout value from config
+        dropout = config.get('dropout', 0.0)
 
-        # The code from //debuggercafe.com/unet-from-scratch-using-pytorch/
-        
-
-        # Contracting path.
-        # Each convolution is applied twice.
-        # AG since we use monochrome here, we used only one channel as an input
-        # For four layers we had ~14M parameters, too many
-        # For Three layers we hopefully have few parameters to optimize
-        if self.conv3d == False:
+        # --------------------------------------------------------
+        # 2D U-NET ARCHITECTURE
+        # --------------------------------------------------------
+        if not self.conv3d:
+            # Input: (Batch, Nimgs, H, W) -> Output: (Batch, Classes, H, W)
             self.norm = nn.BatchNorm2d(num_features=self.Nimgs, affine=True)
             self.max_pool = nn.MaxPool2d(kernel_size=2, stride=2)
+
+            # Contracting Path (Encoder)
             self.down_convolution_1 = double_convolution_2d(self.Nimgs, 64, dropout=dropout)
             self.down_convolution_2 = double_convolution_2d(64, 128, dropout=dropout)
             self.down_convolution_3 = double_convolution_2d(128, 256, dropout=dropout)
-            
-            # Expanding path.
+
+            # Expanding Path (Decoder)
             self.up_transpose_1 = nn.ConvTranspose2d(
                 in_channels=256, out_channels=128,
-                kernel_size=2,
-                stride=2)
+                kernel_size=2, stride=2
+            )
             self.up_convolution_1 = double_convolution_2d(256, 128, dropout=dropout)
 
             self.up_transpose_2 = nn.ConvTranspose2d(
                 in_channels=128, out_channels=64,
-                kernel_size=2,
-                stride=2)
+                kernel_size=2, stride=2
+            )
             self.up_convolution_2 = double_convolution_2d(128, 64, dropout=dropout)
 
-            # output => `out_channels` as per the number of classes.
+            # Output Head
             self.out = nn.Conv2d(
                 in_channels=64, out_channels=num_classes,
                 kernel_size=1
             )
-            
-            
+
+        # --------------------------------------------------------
+        # 3D U-NET ARCHITECTURE
+        # --------------------------------------------------------
         else:
+            # Input: (Batch, 1, Depth, H, W) -> Output: (Batch, Classes, Depth, H, W)
             self.norm = nn.BatchNorm3d(num_features=1, affine=True)
-            self.max_pool = nn.MaxPool3d(kernel_size=(1,2,2), stride=2)
+            self.max_pool = nn.MaxPool3d(kernel_size=(1, 2, 2), stride=2)
+
+            # Contracting Path
             self.down_convolution_1 = double_convolution_3d(1, 64, dropout=dropout)
             self.down_convolution_2 = double_convolution_3d(64, 128, dropout=dropout)
             self.down_convolution_3 = double_convolution_3d(128, 256, dropout=dropout)
-            
-            # Expanding path.
+
+            # Expanding Path
             self.up_transpose_1 = nn.ConvTranspose3d(
                 in_channels=256, out_channels=128,
-                kernel_size=(1,2,2),
-                stride=2)
+                kernel_size=(1, 2, 2), stride=2
+            )
             self.up_convolution_1 = double_convolution_3d(256, 128, dropout=dropout)
 
             self.up_transpose_2 = nn.ConvTranspose3d(
                 in_channels=128, out_channels=64,
-                kernel_size=(1,2,2),
-                stride=2)
+                kernel_size=(1, 2, 2), stride=2
+            )
             self.up_convolution_2 = double_convolution_3d(128, 64, dropout=dropout)
 
-            # output => `out_channels` as per the number of classes.
+            # Output Head
             self.out = nn.Conv3d(
                 in_channels=64, out_channels=num_classes,
                 kernel_size=1
             )
 
-    def forward(self, mask, xyz):
-        # hard coding cuda device
-        # only change device for training otherwise conditional statement to run on cuda then cpu if cuda not avaialble
-        if self.training:
-            mask = mask.to(self.phys_device)
-            xyz = xyz.to(self.phys_device)
-        im = self.physicalLayer(mask, xyz)
-        
-        if self.training:
-            im = im.to(self.cnn_device)
-        #im = self.norm(im)
+    def forward(self, x):
+        """
+        Pure Inference Forward Pass.
+        Args:
+            x (Tensor): The input image generated by the physics engine.
+                        Shape: (Batch, Nimgs, H, W) if 2D
+                        Shape: (Batch, 1, Depth, H, W) if 3D
+        """
+        # 1. Normalization
+        # We assume 'x' is already on the correct device (handled by Wrapper)
+        x = self.norm(x)
 
-        # im_test = im[0,0,:,:]
-        # plt.imshow(im_test.detach().numpy())
-        # plt.show()
-        down_1 = self.down_convolution_1(im)
+        # 2. Encoder
+        down_1 = self.down_convolution_1(x)
         down_2 = self.max_pool(down_1)
+        
         down_3 = self.down_convolution_2(down_2)
         down_4 = self.max_pool(down_3)
+        
         down_5 = self.down_convolution_3(down_4)
 
+        # 3. Decoder with Skip Connections
         up_1 = self.up_transpose_1(down_5)
-        im = self.up_convolution_1(torch.cat([down_3, up_1], 1))
-        up_2 = self.up_transpose_2(im)
-        im = self.up_convolution_2(torch.cat([down_1, up_2], 1))
-        out = self.out(im)
+        
+        # Concatenate skip connection (down_3) with upsampled feature map
+        x = self.up_convolution_1(torch.cat([down_3, up_1], dim=1))
+        
+        up_2 = self.up_transpose_2(x)
+        
+        # Concatenate skip connection (down_1)
+        x = self.up_convolution_2(torch.cat([down_1, up_2], dim=1))
+
+        # 4. Final Classification Layer
+        out = self.out(x)
+        
         return out
 
 if __name__ == '__main__':
