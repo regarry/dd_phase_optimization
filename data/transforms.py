@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+
 def batch_xyz_to_boolean_grid(xyz_np, config):
 
     image_volume = config["image_volume"]

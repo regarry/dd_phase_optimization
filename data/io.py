@@ -157,3 +157,50 @@ def load_tiff_stack(path):
     
     # skimage handles multipage tiffs automatically
     return skimage.io.imread(path)
+
+def expand_config(config):
+    """
+    Calculates derived parameters (pixel sizes, spatial ranges, volumes)
+    based on the core settings in the config YAML.
+    """
+    # 1. Pixel Size Calculation
+    # We calculate the effective pixel size at the sample plane
+    config['px'] = config['slm_px'] / config['phase_mask_upsample_factor']
+
+    # 2. Derive Bead Volume from Image Volume
+    # The 'image_volume' is the total field of view. 
+    # The 'bead_volume' is the safe zone where beads can exist (avoiding edges).
+    image_volume = config['image_volume']
+    psf_keep_radius = config['psf_keep_radius']
+
+    bead_vol_x = image_volume[0] - 2 * psf_keep_radius
+    bead_vol_y = image_volume[1] - 2 * psf_keep_radius
+    bead_vol_z = image_volume[2] 
+
+    config['bead_volume'] = [bead_vol_x, bead_vol_y, bead_vol_z]
+
+    # 3. Set Spatial Ranges (for the generator)
+    # XY: Start at radius, end at image_size - radius
+    config['particle_spatial_range_xy'] = [psf_keep_radius, image_volume[0] - psf_keep_radius]
+
+    # Z: Center around 0. If Depth is 30, range is -15 to +15.
+    z_length = image_volume[2]
+    z_start = -(z_length // 2)
+    z_end = z_start + z_length
+    config['particle_spatial_range_z'] = [z_start, z_end]
+
+    # 4. PSF Settings
+    config['psf_width_pixels'] = 2 * psf_keep_radius + 1
+    
+    z_depth_list = config['z_depth_list']
+    Nimgs = len(z_depth_list)
+    config['Nimgs'] = Nimgs
+
+    # 5. Validity Checks
+    if config['num_classes'] > 1:
+        z_coupled_ratio = config.get('z_coupled_ratio', 0)
+        z_coupled_spacing = config.get('z_coupled_spacing_range', (0,0))
+        if z_coupled_ratio <= 0 or z_coupled_spacing[0] <= 0:
+             raise ValueError("For multi-class, you must set z_coupled_ratio > 0 and z_coupled_spacing_range.")
+
+    return config
