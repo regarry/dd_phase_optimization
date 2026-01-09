@@ -273,10 +273,9 @@ class Normalize01(nn.Module):
 # and output the resulting 2D image corresponding to the emitters location.
 # ===================================================
 
-class PhysicalLayer(nn.Module):
+class OpticsSimulation(nn.Module):
     def __init__(self, config):
-        super(PhysicalLayer, self).__init__()
-        
+        super(OpticsSimulation, self).__init__()
         #unpack the config
         self.config = config
         self.bfp_dir = config["bfp_dir"]

@@ -1,13 +1,12 @@
 import torch
-from torch.utils.data import Dataset
 import numpy as np
-from .generators import create_random_emitters
+from torch.utils.data import Dataset
+from .generators import create_random_emitters, batch_xyz_to_boolean_grid, batch_xyz_to_3_class_grid
 
 class SyntheticMicroscopeData(Dataset):
     def __init__(self, epoch_length, config):
         """
-        epoch_length: How many 'batches' to simulate per epoch. 
-                      Since data is infinite, we just pick a number (e.g., 1000).
+        epoch_length: Arbitrary length (e.g., 1000) to define one 'epoch'.
         """
         self.length = epoch_length
         self.config = config
@@ -16,20 +15,30 @@ class SyntheticMicroscopeData(Dataset):
         return self.length
 
     def __getitem__(self, idx):
-        # 1. GENERATE FRESH DATA INSTANTLY
+        # 1. GENERATE FRESH COORDINATES
+        # xyz shape: (N_emitters, 3)
         xyz, between_beads = create_random_emitters(self.config)
         
-        # 2. Generate Photons (Simple logic from your snippet)
-        n_beads = xyz.shape[0]
-        # Example photon count logic
-        photons = np.random.randint(10000, 10001, size=n_beads).astype(np.float32)
-
-        # 3. Return Tensors
-        # Note: We return 'between_beads' only if your model uses it, 
-        # otherwise usually you just need xyz and photons.
-        sample = {
-            'xyz': torch.from_numpy(xyz).float(),      # Shape: (N, 3)
-            'photons': torch.from_numpy(photons).float()
-        }
+        # 2. GENERATE TARGET (Ground Truth Volume)
+        # The generator functions expect a Batch dimension (Batch, N, 3).
+        # Since __getitem__ handles a single sample, we add a fake batch dim.
+        xyz_batch = xyz[np.newaxis, ...] # Shape becomes (1, N, 3)
         
-        return sample
+        if self.config.get('num_classes', 1) > 1:
+             # Handle 3-class case (Background, Bead, Connection)
+             between_batch = between_beads[np.newaxis, ...] if between_beads is not None else None
+             target = batch_xyz_to_3_class_grid(xyz_batch, between_batch, self.config)
+        else:
+             # Standard Binary Case
+             target = batch_xyz_to_boolean_grid(xyz_batch, self.config)
+
+        # 3. CLEANUP
+        # Remove the fake batch dimension so the DataLoader can stack them properly later.
+        # Target shape goes from (1, Channels, H, W) -> (Channels, H, W)
+        target = target.squeeze(0)
+        
+        # Convert inputs to float tensor
+        xyz_tensor = torch.from_numpy(xyz).float()
+        
+        # 4. RETURN TUPLE (Matches your training loop structure)
+        return xyz_tensor, target

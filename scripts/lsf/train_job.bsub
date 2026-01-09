@@ -4,7 +4,6 @@
 #BSUB -R "rusage[mem=16GB]"
 #BSUB -q bme_gpu
 #BSUB -gpu "num=1:mode=exclusive_process:mps=no"
-##BSUB -R "select[hname!=gpu18]"
 #BSUB -J mask_learning
 #BSUB -o ./logs/.%J
 #BSUB -e ./logs/.%J
