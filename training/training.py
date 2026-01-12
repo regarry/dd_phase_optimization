@@ -33,13 +33,13 @@ def train_one_epoch(model, dataloader, optimizer, criterion, tv_loss, mask_param
     main_device = torch.device(config.get('cnn_device', 'cuda:0'))
     grad_accum = config.get('gradient_accumulation_steps', 32)
     
-    for batch_idx, (xyz, targets) in enumerate(dataloader):
+    for batch_idx, (bead_xyz_list, targets) in enumerate(dataloader):
         # ---------------------------------------------------------
         # 1. MOVE DATA TO MAIN GPU
         # ---------------------------------------------------------
         # xyz shape from loader: (Batch, N_emitters, 3)
         # targets shape from loader: (Batch, Channels, H, W)
-        xyz = xyz.to(main_device)
+        bead_xyz_list = bead_xyz_list.to(main_device)
         targets = targets.to(main_device)
         
         # Handle target dimensions (CrossEntropy expects specific shapes)
@@ -55,7 +55,7 @@ def train_one_epoch(model, dataloader, optimizer, criterion, tv_loss, mask_param
         # 2. FORWARD PASS (Through Parallel Wrapper)
         # ---------------------------------------------------------
         # Wrapper acts as traffic controller.
-        outputs = model(mask_param, xyz)
+        outputs = model(mask_param, bead_xyz_list)
         
         # ---------------------------------------------------------
         # 3. LOSS & OPTIMIZATION
@@ -104,7 +104,7 @@ def main():
 
     print(f"🚀 Training started: {model_name}")
     print(f"   Image Volume: {config['image_volume']}")
-    print(f"   Safe Bead Volume: {config['bead_volume']}")
+    print(f"   Bead Volume: {config['bead_volume']}")
 
     # 4. Pre-processing & Model
     generate_bead_templates(config)
@@ -139,13 +139,14 @@ def main():
                                    tv_loss, mask_param, config, epoch)
             train_losses.append(loss)
             print(f"🟢 Epoch {epoch+1} Loss: {loss:.4f}")
+            print_all_gpu_stats()
             
             # Save artifacts
             np.savetxt(os.path.join(res_dir, 'train_losses.txt'), train_losses, delimiter=',')
             save_png(mask_param.detach(), res_dir, str(epoch).zfill(3), config)
             savePhaseMask(mask_param, epoch, res_dir)
             
-            if epoch % 5 == 0:
+            if epoch % 5 == 0 or epoch == config['max_epochs'] - 1:
                 torch.save(model.state_dict(), os.path.join(res_dir, f'net_{epoch}.pt'))
 
 if __name__ == '__main__':

@@ -27,17 +27,16 @@ class ParallelEndToEndModel(nn.Module):
         print(f"🧠 Initializing UNet on {self.main_device}...")
         self.unet.to(self.main_device)
 
-    def forward(self, mask_param, emitters, photons=None):
+    def forward(self, mask_param, emitters):
         """
         mask_param: The learnable Phase Mask (usually on cuda:0)
-        emitters:   (Batch, N, 3) Coordinates
-        photons:    (Batch, N) Intensities
+        emitters:   (Batch, N, 3) Coordinates beads
         """
         
         # --- Step 1: Physical Simulation (Multi-GPU) ---
         # The CPU wrapper calls the physics engine.
         # The engine splits data, runs on GPU 0, 1, 2..., and sums result to GPU 0.
-        sensor_image = self.physics(mask_param, emitters, photons)
+        sensor_image = self.physics(mask_param, emitters)
         
         # --- Step 2: Reconstruction (Single GPU) ---
         # The image is now on cuda:0. We pass it to the UNet.
