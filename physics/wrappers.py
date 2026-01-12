@@ -25,7 +25,7 @@ class MultiGpuSimulation(nn.Module):
             print("⚠️ No GPU detected. Running on CPU (this will be slow).")
             self.replicas.append(OpticsSimulation(config)) # Default device is CPU
 
-    def forward(self, mask_param, xyz, photons=None):
+    def forward(self, mask_param, xyz):
         # 1. Bypass complex logic if we only have 1 device (1 GPU or CPU)
         if len(self.replicas) == 1:
             # Ensure inputs are on the correct device (cuda:0 or cpu)
@@ -46,7 +46,6 @@ class MultiGpuSimulation(nn.Module):
             device = f'cuda:{i}'
             
             # Slice & Move
-            # Note: We ignore 'photons' here as discussed
             xyz_slice = xyz[:, start:end, :].to(device)
             mask_slice = mask_param.to(device)
             

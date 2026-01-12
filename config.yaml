@@ -61,7 +61,7 @@ ratio_input_output_image_size: 1 # default with Unet 1, with ResNet 4
 # ==========================================
 # 5. BEAD & SAMPLE GENERATION
 # ==========================================
-num_particles_range: [800, 801] # [min, max] emitters per image. Strong GPU: [450, 550]
+num_particles_range: [1600, 1601] # [min, max] emitters per image. Strong GPU: [450, 550]
 bead_radius: 1.0           # pixels 1.0 default
 #particle_spatial_range_xy: [15, 985] # [min, max] px, to avoid edges (default 200 um volume)
 #particle_spatial_range_z: [-49, 49, 1] # [start, stop, step] px
