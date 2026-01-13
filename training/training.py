@@ -107,7 +107,7 @@ def main():
     print(f"   Bead Volume: {config['bead_volume']}")
 
     # 4. Pre-processing & Model
-    generate_bead_templates(config)
+    generate_bead_templates(config, res_dir)
     
     model = ParallelEndToEndModel(config)
     
@@ -133,13 +133,16 @@ def main():
 
     # 6. Loop
     train_losses = []
-    with MemorySnapshot(os.path.join(res_dir, "crash_snapshot.pickle")):
+    with MemorySnapshot(os.path.join(res_dir, "crash_snapshot.pickle")) as snapshot:
         for epoch in range(config['max_epochs']):
             loss = train_one_epoch(model, train_loader, optimizer, criterion, 
                                    tv_loss, mask_param, config, epoch)
             train_losses.append(loss)
             print(f"🟢 Epoch {epoch+1} Loss: {loss:.4f}")
-            print_all_gpu_stats()
+            if epoch == 0:
+                print_all_gpu_stats()
+                snapshot.dump()
+                snapshot.end()
             
             # Save artifacts
             np.savetxt(os.path.join(res_dir, 'train_losses.txt'), train_losses, delimiter=',')

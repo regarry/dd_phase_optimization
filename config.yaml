@@ -2,11 +2,11 @@
 # 1. OPTIMIZATION & TRAINING LOOP
 # ==========================================
 random_seed: 12345
-ntrain: 1000              # default 10000 how many bead volumes per epoch
+ntrain: 128              # default 10000 how many bead volumes per epoch
 nvalid: 10                  # default 1000
 batch_size: 1              # Training batch size
 accumulation_steps: 32     # Gradient accumulation steps to simulate larger batch sizes
-max_epochs: 100
+max_epochs: 1
 initial_learning_rate: 1.0e-4
 gradient_checkpointing: False
 
@@ -61,7 +61,7 @@ ratio_input_output_image_size: 1 # default with Unet 1, with ResNet 4
 # ==========================================
 # 5. BEAD & SAMPLE GENERATION
 # ==========================================
-num_particles_range: [1600, 1601] # [min, max] emitters per image. Strong GPU: [450, 550]
+num_particles_range: [2000, 2001] # [min, max] emitters per image. Strong GPU: [450, 550]
 bead_radius: 1.0           # pixels 1.0 default
 #particle_spatial_range_xy: [15, 985] # [min, max] px, to avoid edges (default 200 um volume)
 #particle_spatial_range_z: [-49, 49, 1] # [start, stop, step] px
@@ -69,7 +69,7 @@ bead_radius: 1.0           # pixels 1.0 default
 # ==========================================
 # 6. ILLUMINATION & BEAM PROPERTIES
 # ==========================================
-ori_intensity: 20000       # arbitrary units
+bead_intensity: 20000       # arbitrary units
 illumination_scaling_factor: 1.0e-2
 laser_beam_FWHC: 7.0e-3    # [m] FWHM of Gaussian beam
 bessel_cone_angle_degrees: 0.4

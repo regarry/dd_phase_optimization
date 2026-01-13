@@ -28,6 +28,20 @@ class MemorySnapshot:
                 print("✅ Snapshot saved successfully.")
         except AttributeError:
             pass
+    def dump(self):
+        """Manually dump the memory snapshot."""
+        try:
+            torch.cuda.memory._dump_snapshot(self.filename)
+            print(f"✅ Manual snapshot saved to {self.filename}.")
+        except AttributeError:
+            print("⚠️ Warning: PyTorch version too old for memory snapshot dumping.")
+    def end(self):
+        """Stop recording memory history."""
+        try:
+            torch.cuda.memory._record_memory_history(enabled=None)
+            print("🛑 Memory recording stopped.")
+        except AttributeError:
+            print("⚠️ Warning: PyTorch version too old for stopping memory recording.")
 
 def print_all_gpu_stats():
     """Prints memory usage for all available GPUs."""

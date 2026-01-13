@@ -318,9 +318,10 @@ class OpticsSimulation(nn.Module):
         self.conv3d = config.get('conv3d', False)
         self.aperature = config.get('aperature', False)
         self.phase_mask_upsample_factor = config.get('phase_mask_upsample_factor', 1)  # scale factor for the phase mask upsampling
-        #self.N =  config['N']
+        self.N = config['N']
+        self.scale_factor = config['scale_factor']
         self.phase_mask_pixel_size = config['phase_mask_pixel_size']    
-        self.N = self.phase_mask_upsample_factor * self.phase_mask_pixel_size # grid size for the physics calculations
+        #self.N = self.phase_mask_upsample_factor * self.phase_mask_pixel_size # grid size for the physics calculations
         #self.z_spacing = config.get('z_spacing', 0)
         #self.z_img_mode = config.get('z_img_mode', 'edgecenter')
         #if self.z_img_mode == 'everyother':
@@ -351,8 +352,6 @@ class OpticsSimulation(nn.Module):
 
         
         # initialize phase mask
-        if self.lens_approach == 'lazy_4f':
-            pass 
         incident_gaussian = 1 * np.exp(-(np.square(X) + np.square(Y)) / (2 * laser_beam_FWHC ** 2))
         incident_gaussian = torch.from_numpy(incident_gaussian).type(torch.FloatTensor)
         
@@ -728,11 +727,9 @@ class OpticsSimulation(nn.Module):
     def lazy_fourf(self, phase_mask):
         Ta = torch.exp(1j * phase_mask).to(phase_mask.device) # amplitude transmittance (in our case the slm reflectance)
         Uo = self.incident_gaussian * Ta # light directly behind the SLM (or in our case reflected from the SLM)
-        magnification_factor = self.focal_length_2 / self.focal_length_1
-        scale_factor = self.phase_mask_upsample_factor * magnification_factor
         U1 = F.interpolate(
             Uo[None, None, :, :], 
-            scale_factor=scale_factor, 
+            scale_factor= self.scale_factor, 
             mode='bilinear', 
             align_corners=False
             )   
