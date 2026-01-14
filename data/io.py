@@ -104,7 +104,7 @@ def save_3d_volume_as_tiffs(volume, out_dir, base_name_prefix=""):
 
 def savePhaseMask(mask_param, epoch, res_dir):
     mask_numpy = mask_param.data.cpu().clone().numpy()
-    skimage.io.imsave(os.path.join(res_dir, f'mask_phase_epoch_{epoch}.tiff'), mask_numpy)
+    skimage.io.imsave(os.path.join(res_dir, f'mask_phase_epoch_{epoch}.tiff'), mask_numpy, check_contrast=False)
 
 def save_output_layer(output_layer, base_dir, lens_approach, counter, datetime_str, config):
     output_array = torch.square(torch.abs(output_layer)).cpu().detach().numpy()[0,0,:,:]

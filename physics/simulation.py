@@ -728,14 +728,14 @@ class OpticsSimulation(nn.Module):
         return output_layer
     
     def lazy_fourf(self, phase_mask):
-        Ta = torch.exp(1j * phase_mask).to(phase_mask.device) # amplitude transmittance (in our case the slm reflectance)
-        Uo = self.incident_gaussian * Ta # light directly behind the SLM (or in our case reflected from the SLM)
-        U1 = F.interpolate(
-            Uo[None, None, :, :], 
+        phase_mask_scaled = F.interpolate(
+            phase_mask[None, None, :, :], 
             scale_factor= self.scale_factor, 
             mode='bilinear', 
             align_corners=False
             )   
+        Ta = torch.exp(1j * phase_mask_scaled).to(phase_mask.device) # amplitude transmittance (in our case the slm reflectance)
+        U1 = self.incident_gaussian * Ta # light directly behind the SLM (or in our case reflected from the SLM)
         return U1
     
     def fivef(self, phase_mask):

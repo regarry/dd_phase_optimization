@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 # Add the parent directory to sys.path so we can import 'data', 'models', etc.
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import argparse
@@ -105,6 +106,7 @@ def train_one_epoch(model, dataloader, optimizer, criterion, tv_loss, mask_param
     return total_loss / len(dataloader)
 
 def main():
+    start_time = time.time()
     # 1. Load & Expand Config
     parser = argparse.ArgumentParser()
     parser.add_argument('-c', '--config', default='config.yaml', help='Path to config')
@@ -179,6 +181,7 @@ def main():
             
             if epoch % 5 == 0 or epoch == config['max_epochs'] - 1:
                 torch.save(model.state_dict(), os.path.join(training_results_dir, f'net_{epoch}.pt'))
-
+    elapsed = time.time() - start_time
+    print(f"Training completed in {elapsed:.2f} seconds.")
 if __name__ == '__main__':
     main()
