@@ -7,14 +7,16 @@ import argparse
 import numpy as np
 import torch
 import random
+import pickle
 import torch.nn as nn
+import torch.optim as optim
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 from datetime import datetime
 
 # --- Local Imports ---
 from data.io import expand_config, load_config, makedirs, save_png, savePhaseMask
-from data.datasets import SyntheticMicroscopeData
+from data.datasets import SyntheticMicroscopeData, ValidationDataset
 from models.wrappers import ParallelEndToEndModel
 from data.preprocessing import generate_bead_templates
 from utils.debug import MemorySnapshot, print_all_gpu_stats
@@ -105,6 +107,78 @@ def train_one_epoch(model, dataloader, optimizer, criterion, tv_loss, mask_param
             
     return total_loss / len(dataloader)
 
+def validate_one_epoch(model, dataloader, criterion, tv_loss, mask_param, config, epoch):
+    """
+    Runs one epoch of validation.
+    """
+    model.eval() # Set model to evaluation mode
+    
+    total_loss = 0.0
+    main_device = torch.device(config.get('cnn_device', 'cuda:0'))
+    
+    # Disable gradient calculation for validation
+    with torch.no_grad():
+        for batch_idx, (bead_xyz_list, targets) in enumerate(dataloader):
+            # ---------------------------------------------------------
+            # 1. MOVE DATA TO MAIN GPU
+            # ---------------------------------------------------------
+            bead_xyz_list = bead_xyz_list.to(main_device)
+            targets = targets.to(main_device)
+            
+            # Handle target dimensions (Mirroring training logic)
+            if config['num_classes'] > 1:
+                if targets.dim() == 4 and targets.shape[1] == 1:
+                    targets = targets.squeeze(1).long()
+            else:
+                pass
+
+            # ---------------------------------------------------------
+            # 2. FORWARD PASS
+            # ---------------------------------------------------------
+            outputs = model(mask_param, bead_xyz_list)
+            
+            # ---------------------------------------------------------
+            # 3. LOSS CALCULATION
+            # ---------------------------------------------------------
+            criteria_loss = criterion(outputs, targets)
+            
+            # We include TV loss in validation so the number compares 1:1 with training loss
+            total_variation_loss = tv_loss(mask_param)
+            
+            oof_loss = 0.0
+            if config.get('oof_loss_weight', 0.0) > 0.0:
+                # Re-using your exact OOF logic
+                if targets.dim() == 4:
+                    bead_mask = (targets > 0).float()
+                else:
+                    bead_mask = (targets > 0).float().unsqueeze(1)
+
+                oof_mask = 1.0 - bead_mask
+                
+                if config['num_classes'] > 1:
+                    probs = torch.softmax(outputs, dim=1)
+                    oof_intensity = (probs[:, 1:, :, :] * oof_mask).sum()
+                else:
+                    probs = torch.sigmoid(outputs)
+                    oof_intensity = (probs * oof_mask).sum()
+
+                oof_weight = config.get('oof_loss_weight', 1.0)
+                oof_loss = oof_weight * oof_intensity / outputs.numel()
+
+            # Sum all losses
+            loss = criteria_loss + total_variation_loss + oof_loss
+            
+            total_loss += loss.item()
+            
+            # Optional: Print less frequently during validation
+            if batch_idx % 10 == 0:
+                print(f"Val Epoch [{epoch+1}], Step [{batch_idx+1}], Loss: {loss.item():.4f}")
+
+    avg_loss = total_loss / len(dataloader)
+    print(f"==> Validation Epoch {epoch+1} Complete. Avg Loss: {avg_loss:.4f}")
+    
+    return avg_loss
+
 def main():
     start_time = time.time()
     # 1. Load & Expand Config
@@ -147,6 +221,18 @@ def main():
     
     optimizer = Adam(list(model.parameters()) + [mask_param], lr=config['initial_learning_rate'])
     
+    # 2. Setup Scheduler
+    # mode='min': We want to reduce LR when loss stops decreasing (minimizing)
+    # factor=0.5: When triggered, cut LR in half.
+    # patience=10: Wait 10 epochs with no improvement before cutting LR.
+    # verbose=True: Print a message when the LR changes.
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, 
+        mode='min', 
+        factor=0.5, 
+        patience=10, 
+        verbose=True
+    )
     # Loss setup
     if config['num_classes'] > 1:
         weights = torch.tensor(config.get('weights', [1,1,1])).float().to(main_device)
@@ -156,11 +242,31 @@ def main():
     
     tv_loss = TotalVariationLoss(weight=config.get('tv_loss_weight', 0.0))
 
-    # 5. Dataloader
-    steps_per_epoch = int(config['ntrain'] / config['batch_size'])
-    train_ds = SyntheticMicroscopeData(epoch_length=steps_per_epoch, config=config)
+    # 5. Training Dataloader
+    train_steps_per_epoch = int(config['ntrain'] / config['batch_size'])
+    train_ds = SyntheticMicroscopeData(epoch_length=train_steps_per_epoch, config=config)
     train_loader = DataLoader(train_ds, batch_size=config['batch_size'], shuffle=True, num_workers=4)
-
+    
+    # Validation Dataloader
+    val_samples = []
+    labels_dict = {}
+    val_steps_per_epoch = int(config['nvalid'] / config['batch_size'])
+    print("Caching validation data...")
+    for i in range(val_steps_per_epoch):
+        # This calls your random generation logic
+        data_pair = train_ds[i] 
+        val_samples.append(data_pair)
+        xyz = data_pair[0].tolist()
+        labels_dict[i] = {'xyz': xyz}
+         
+    path_labels = os.path.join(training_results_dir,'labels.pickle')
+    with open(path_labels, 'wb') as handle:
+        pickle.dump(labels_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    
+    val_ds = ValidationDataset(val_samples)
+    val_loader = DataLoader(val_ds, batch_size=config['batch_size'], shuffle=False, num_workers=4)
+    
+    
     # 6. Loop
     train_losses = []
     with MemorySnapshot(os.path.join(training_results_dir, "crash_snapshot.pickle")) as snapshot:
@@ -168,7 +274,10 @@ def main():
             loss = train_one_epoch(model, train_loader, optimizer, criterion, 
                                    tv_loss, mask_param, config, epoch)
             train_losses.append(loss)
-            print(f"🟢 Epoch {epoch+1} Loss: {loss:.4f}")
+            val_loss = validate_one_epoch(model, val_loader, criterion, tv_loss, mask_param, config, epoch)
+            scheduler.step(val_loss)
+            current_lr = optimizer.param_groups[0]['lr']
+            print(f"🟢 Epoch {epoch+1} Loss: {loss:.4f}| Val Loss: {val_loss:.4f}| LR: {current_lr:.2e}")
             if epoch == 0:
                 print_all_gpu_stats()
                 snapshot.dump()

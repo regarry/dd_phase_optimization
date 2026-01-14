@@ -412,8 +412,8 @@ class OpticsSimulation(nn.Module):
         # Generate spatial frequencies using np.fft.fftfreq
         # This function correctly produces N frequency bins.
         # The 'd' argument is the spatial sampling interval (px).
-        Fx_raw = np.fft.fftfreq(self.N, d=self.px)
-        Fy_raw = np.fft.fftfreq(self.N, d=self.px)
+        Fx_raw = np.fft.fftfreq(2*self.N, d=self.px)
+        Fy_raw = np.fft.fftfreq(2*self.N, d=self.px)
 
         # Shift the zero-frequency component to the center of the array
         # This reorders the frequencies to be from -Fs/2 to Fs/2 - dF
@@ -604,6 +604,48 @@ class OpticsSimulation(nn.Module):
         #    self._visualize_step("U1_old", U1_old)
         #    self._visualize_real("Intensity (real(U1_old * conj(U1_old)))", torch.real(U1_old * torch.conj(U1_old)))
         #U1 = torch.real(U1 * torch.conj(U1))
+        return U1
+    
+
+    def angular_spectrum_propagation_padded(self, input_field, z, debug=False):
+        """
+        Angular spectrum propagation with 2x zero-padding to prevent aliasing.
+        """
+        # Get original dimensions
+        h, w = input_field.shape[-2:]
+        
+        # Step 0: Zero-pad to double the size (2H, 2W)
+        # This prevents the circular convolution wrap-around artifacts
+        pad_h, pad_w = h // 2, w // 2
+        padded_field = F.pad(input_field, (pad_w, pad_w, pad_h, pad_h), mode='constant', value=0)
+        
+        # Step 1: FFT2 of padded field
+        fft2_field = torch.fft.fft2(padded_field)
+        
+        # Step 2: Propagation kernel
+        # Note: Ensure self.gamma_cust and self.px are recalculated/scaled 
+        # if they depend on the grid size/sampling frequency.
+        # We assume self.px and self.gamma_cust match the padded dimensions here.
+        prop_kernel = torch.exp(1j * self.k * self.gamma_cust * z * self.px)
+        
+        # Step 3: FFTSHIFT Kernel
+        prop_kernel_shift = torch.fft.fftshift(prop_kernel)
+        
+        # Step 4: Multiply
+        mult = fft2_field * prop_kernel_shift
+        
+        # Step 5: IFFT2
+        U_padded = torch.fft.ifft2(mult)
+        
+        # Step 6: Crop back to original size
+        # Removing the padding to return the field in the original dimensions
+        U1 = U_padded[..., pad_h : pad_h + h, pad_w : pad_w + w]
+        
+        if debug:
+            self._visualize_step("Padded Field", padded_field)
+            self._visualize_step("IFFT2 (Padded)", U_padded)
+            self._visualize_real("Final Intensity", torch.real(U1 * torch.conj(U1)))
+            
         return U1
     
     def fresnel_propagation(self, input_img, z, debug=False):
@@ -849,7 +891,7 @@ class OpticsSimulation(nn.Module):
         
             # Propagate field and get intensity
             if asm:
-                output_field = self.angular_spectrum_propagation(initial_field, z_px)
+                output_field = self.angular_spectrum_propagation_padded(initial_field, z_px)
                 intensity_at_z[i] = torch.real(output_field * torch.conj(output_field))
             else:
                 output_field = self.fresnel_propagation(initial_field, z_px)
@@ -1002,7 +1044,7 @@ class OpticsSimulation(nn.Module):
                     z = xyz[i, j, 2].type(torch.LongTensor)
 
                     x_ori = xyz[i, j, 0].type(torch.LongTensor)
-                    U1 = self.angular_spectrum_propagation(output_layer, x) # angular spectrum propagation
+                    U1 = self.angular_spectrum_propagation_padded(output_layer, x) # angular spectrum propagation
                     U1_intensity = torch.real(U1 * torch.conj(U1)) # intensity of the propagated field
                     #U1 = self.fresnel_propagation(output_layer, x) # fresnel propagation
                     # Here we assume that the beam is being dithered up and down

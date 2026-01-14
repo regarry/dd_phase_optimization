@@ -5,10 +5,10 @@ import torch
 import skimage.io
 import matplotlib.pyplot as plt
 from datetime import datetime
-from data_utils import load_config, normalize_to_uint16, extract_datetime_and_epoch
+from data.io import load_config, normalize_to_uint16
 #from beam_profile_gen import BeamProfiler
-from bessel import generate_axicon_phase_mask
-from physics_utils import PhysicalLayer
+from physics.bessel import generate_axicon_phase_mask
+from physics.simulation import OpticsSimulation
 
 def main():
     parser = argparse.ArgumentParser(description="Test light propagation with optional axicon phase mask and save beam profile.")
@@ -120,14 +120,17 @@ def main():
     # to test 9f try running results with fourier lens
     #lens_approach = 'fourier_lens'  # temporarily force fourier lens for testing
     
-    phys_layer = PhysicalLayer(config).to(device)
+    phys_layer = OpticsSimulation(config).to(device)
     phys_layer.eval()
-    if phase_mask_upsample_factor > 1:
-        mask_tensor = torch.from_numpy(mask_np).type(torch.FloatTensor).to(device)
-        mask_tensor = PhysicalLayer.expand_matrix_kron_torch(mask_tensor, phase_mask_upsample_factor)
+    if not lens_approach == 'lazy_4f':
+        if phase_mask_upsample_factor > 1:
+            mask_tensor = torch.from_numpy(mask_np).type(torch.FloatTensor).to(device)
+            mask_tensor = OpticsSimulation.expand_matrix_kron_torch(mask_tensor, phase_mask_upsample_factor)
+        else:
+            mask_tensor = torch.from_numpy(mask_np).type(torch.FloatTensor).to(device)
     else:
         mask_tensor = torch.from_numpy(mask_np).type(torch.FloatTensor).to(device)
-    
+        
     with torch.no_grad():
         if lens_approach == 'against_lens':
             print("are you sure you didnt mean fourier lens?")
@@ -140,6 +143,8 @@ def main():
             output_layer = phys_layer.fourf(mask_tensor)
         elif lens_approach == '9f':
             output_layer = phys_layer.ninef(mask_tensor)
+        elif lens_approach == 'lazy_4f':
+            output_layer = phys_layer.lazy_fourf(mask_tensor)
         else:
             raise ValueError('lens approach not supported')
 

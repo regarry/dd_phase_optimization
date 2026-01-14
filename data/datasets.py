@@ -43,3 +43,11 @@ class SyntheticMicroscopeData(Dataset):
         
         # 4. RETURN TUPLE (Matches your training loop structure)
         return xyz_tensor, target
+    
+class ValidationDataset(Dataset):
+    def __init__(self, data_list):
+        self.data = data_list
+    def __len__(self):
+        return len(self.data)
+    def __getitem__(self, idx):
+        return self.data[idx]
