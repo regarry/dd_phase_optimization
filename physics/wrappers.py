@@ -28,9 +28,9 @@ class MultiGpuSimulation(nn.Module):
     def forward(self, mask_param, xyz):
         # 1. Bypass complex logic if we only have 1 device (1 GPU or CPU)
         if len(self.replicas) == 1:
-            print(self.replicas)
+            #print(self.replicas)
             # Ensure inputs are on the correct device (cuda:0 or cpu)
-            device = self.replicas[0].parameters().device
+            device = next(self.replicas[0].buffers()).device
             return self.replicas[0](mask_param.to(device), xyz.to(device))
 
         # 2. Multi-GPU Logic (Emitter Parallelism)

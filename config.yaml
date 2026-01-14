@@ -2,7 +2,7 @@
 # 1. OPTIMIZATION & TRAINING LOOP
 # ==========================================
 random_seed: 12345
-ntrain: 128              # default 10000 how many bead volumes per epoch
+ntrain: 32              # default 10000 how many bead volumes per epoch
 nvalid: 10                  # default 1000
 batch_size: 1              # Training batch size
 accumulation_steps: 32     # Gradient accumulation steps to simulate larger batch sizes

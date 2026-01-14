@@ -5,3 +5,11 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "dd_phase_optimization"  # You can name this whatever you want
 version = "0.1.0"
+
+# ... (keep your existing [build-system] and [project] sections) ...
+
+[tool.setuptools.packages.find]
+# ONLY list the folders that contain your python source code
+include = ["models*", "physics*", "training*", "data*"]
+# OPTIONAL: Explicitly ignore the junk folders to be safe
+exclude = ["logs*", "images*", "training_results*", "inference_results*"]

@@ -124,8 +124,6 @@ def main():
     torch.manual_seed(random_seed)
     np.random.seed(random_seed)
     random.seed(random_seed)
-
-    
     
     # Save the FULL config (including the calculated values) for reproducibility
     with open(os.path.join(training_results_dir, 'config.yaml'), 'w') as f:

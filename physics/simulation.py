@@ -10,7 +10,7 @@ import skimage.io
 import matplotlib.pyplot as plt
 from datetime import datetime
 import os
-from dd_phase_optimization.data.io import load_tiff_sequence
+from data.io import load_tiff_sequence
 
 # nohup python mask_learning.py &> ./logs/01-31-25-09-38.txt &
 
@@ -980,13 +980,6 @@ class OpticsSimulation(nn.Module):
         else:
             raise ValueError('lens approach not supported')
             
-        #if self.counter == 0 and not self.training:  
-        debug = False
-        if debug:  # debugging 4f 
-            from data_utils import save_png
-            save_png(phase_mask, self.bfp_dir, "input phase mask", self.config)
-            #save_output_layer(output_layer, self.bfp_dir, self.lens_approach, self.counter, self.datetime, self.config)
-
         self.counter += 1
         
         if self.conv3d == False:

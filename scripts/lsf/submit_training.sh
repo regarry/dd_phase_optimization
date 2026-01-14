@@ -7,6 +7,7 @@ UNIQUE_CONFIG="${TEMP_DIR}/config.${TIMESTAMP}.yaml"
 
 # 2. Create the directory if it doesn't exist
 mkdir -p "$TEMP_DIR"
+mkdir -p ./logs
 
 # 3. Copy the config *now*
 echo "Capturing config.yaml into $UNIQUE_CONFIG"
