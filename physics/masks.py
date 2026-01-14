@@ -5,7 +5,7 @@ import os
 # Import specific physics math
 # Assuming you moved bessel.py to physics/bessel.py in previous steps
 from .bessel import generate_axicon_phase_mask
-from data.io import load_tiff_stack # Reuse your robust IO
+from data.io import load_tiff # Reuse your robust IO
 
 def get_initial_phase_mask(config):
     """
@@ -50,7 +50,7 @@ def get_initial_phase_mask(config):
         print(f"Initializing from file: {path}...")
         
         # Use our robust loader (handles checks and errors)
-        mask = load_tiff_stack(path)
+        mask = load_tiff(path)
         
         # Safety check for dimensions
         if mask.shape != (size, size):

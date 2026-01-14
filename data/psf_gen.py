@@ -136,8 +136,10 @@ def generate_psf(config, results_dir):
         log_file.write("\n")
 
     for i, z in enumerate(z_depth):
-        if i % 5 == 0: # Reduce print spam
-            print(f"Processing slice {i}/{len(z_depth)-1} at Z={z:.2e}")
+        log_msg = f"Processing slice {i}/{len(z_depth)-1} at Z={z:.2e}"
+        print(log_msg)
+        with open(psf_txt_path, "a") as log_file:
+            log_file.write(log_msg + "\n")
             
         slice_psf = get_airy_psf(
             psf_width_pixels, 

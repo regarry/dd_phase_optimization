@@ -10,7 +10,7 @@ import skimage.io
 import matplotlib.pyplot as plt
 from datetime import datetime
 import os
-from data_utils import save_output_layer
+from dd_phase_optimization.data.io import load_tiff_sequence
 
 # nohup python mask_learning.py &> ./logs/01-31-25-09-38.txt &
 
@@ -291,6 +291,7 @@ class OpticsSimulation(nn.Module):
         data_path = self.config['data_path']
         image_volume = config['image_volume']
         psf_keep_radius = config['psf_keep_radius']
+        training_results_dir = config['training_results_dir']
         #device = config['device']
         self.lens_approach = config['lens_approach']
         if self.lens_approach == 'fresnel':
@@ -429,19 +430,21 @@ class OpticsSimulation(nn.Module):
                     gamma_cust[i, j] = np.sqrt(1 - np.square(ALPHA[i][j]) - np.square(BETA[i][j]))
         gamma_cust = torch.from_numpy(gamma_cust).type(torch.FloatTensor)
 
-        # read defocus images
-        self.psf_imgs = []
-        # Cut the PSF images at different planes
-        # Load all TIFF images sequentially from the config['data_path'] folder
-        
-        tiff_files = sorted([f for f in os.listdir(data_path) if f.lower().endswith('.tiff')])
-        print(f"Found {len(tiff_files)} TIFF files in {data_path}:")
-        for idx, fname in enumerate(tiff_files):
-            img_path = os.path.join(data_path, fname)
-            img = skimage.io.imread(img_path)
-            self.psf_imgs.append(img)
-            print(f"Loaded [{idx}] {fname} with shape {img.shape}")
-        print(f"Total images loaded into self.imgs: {len(self.psf_imgs)}")
+
+        # read bead defocus stack
+        # Load all TIFF images sequentially 
+        bead_defocus_dir = os.path.join(training_results_dir, 'bead_defocus_imgs')
+        self.bead_defocus_imgs = load_tiff_sequence(bead_defocus_dir)
+        # tiff_files = sorted([f for f in os.listdir(data_path) if f.lower().endswith('.tiff')])
+        # print(f"Found {len(tiff_files)} TIFF files in {data_path}:")
+        # for idx, fname in enumerate(tiff_files):
+        #     img_path = os.path.join(data_path, fname)
+        #     img = skimage.io.imread(img_path)
+        #     self.psf_imgs.append(img)
+        #     print(f"Loaded [{idx}] {fname} with shape {img.shape}")
+        # print(f"Total images loaded into self.imgs: {len(self.psf_imgs)}")
+        # total_bytes = sum(img.nbytes for img in self.psf_imgs)
+        # print(f"self.psf_imgs memory size: {total_bytes / 1024**2:.2f} MB")
             #plt.imshow(img[center_img + -psf_keep_radius:center_img+psf_keep_radius+1,\
             #                           center_img + -psf_keep_radius:center_img+psf_keep_radius+1])
             #plt.axis('off')  # Turn off axis labels
@@ -455,7 +458,7 @@ class OpticsSimulation(nn.Module):
         self.noise = NoiseLayer(config)
         #self.norm01 = Normalize01()
         # Convert the list of images into a single 3D numpy array first
-        imgs_array = np.array(self.psf_imgs) 
+        imgs_array = np.array(self.bead_defocus_imgs) 
 
         
         #---- REGISTER BUFFERS ---
@@ -478,7 +481,7 @@ class OpticsSimulation(nn.Module):
         # 4. Register the PSF Image Library
         # This converts the list of images (self.imgs) into one 3D GPU tensor
         # Shape: [Num_PSFs, Height, Width]
-        psf_stack = np.array(self.psf_imgs).astype('float32')
+        psf_stack = np.array(self.bead_defocus_imgs).astype('float32')
         self.register_buffer('gpu_psfs', torch.from_numpy(psf_stack))
 
         # 5. Register the Z-Depth List
@@ -982,7 +985,7 @@ class OpticsSimulation(nn.Module):
         if debug:  # debugging 4f 
             from data_utils import save_png
             save_png(phase_mask, self.bfp_dir, "input phase mask", self.config)
-            save_output_layer(output_layer, self.bfp_dir, self.lens_approach, self.counter, self.datetime, self.config)
+            #save_output_layer(output_layer, self.bfp_dir, self.lens_approach, self.counter, self.datetime, self.config)
 
         self.counter += 1
         

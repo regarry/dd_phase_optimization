@@ -144,7 +144,7 @@ def extract_datetime_and_epoch(filepath):
     epoch_num = int(epoch_match.group(1)) if epoch_match else None
     return f"{datetime_str}-{epoch_num}"
 
-def load_tiff_stack(path):
+def load_tiff(path):
     """
     Reads a TIFF stack from disk.
     Args:
@@ -158,13 +158,14 @@ def load_tiff_stack(path):
     # skimage handles multipage tiffs automatically
     return skimage.io.imread(path)
 
-def expand_config(config):
+def expand_config(config, training_results_dir):
     """
     Calculates derived parameters (pixel sizes, spatial ranges, volumes)
     based on the core settings in the config YAML.
     """
     # 1. Pixel Size Calculation
     # We calculate the effective pixel size at the sample plane
+    config['training_results_dir'] = training_results_dir
     config['4f_magnification'] = config['focal_length_2'] / config['focal_length_1']
     config['scale_factor'] = config['phase_mask_upsample_factor'] * config['4f_magnification']
     if config['lens_approach'] == 'lazy_4f':
@@ -211,3 +212,21 @@ def expand_config(config):
              raise ValueError("For multi-class, you must set z_coupled_ratio > 0 and z_coupled_spacing_range.")
 
     return config
+
+def load_tiff_sequence(data_path):
+    """
+    Loads all TIFF files from a directory into a list, prints their shapes and total memory usage.
+    Returns the list of images.
+    """
+    tiff_files = sorted([f for f in os.listdir(data_path) if f.lower().endswith('.tiff')])
+    print(f"Found {len(tiff_files)} TIFF files in {data_path}:")
+    imgs = []
+    for idx, fname in enumerate(tiff_files):
+        img_path = os.path.join(data_path, fname)
+        img = skimage.io.imread(img_path)
+        imgs.append(img)
+        print(f"Loaded [{idx}] {fname} with shape {img.shape}")
+    print(f"Total images loaded: {len(imgs)}")
+    total_bytes = sum(img.nbytes for img in imgs)
+    print(f"Total memory size: {total_bytes / 1024**2:.2f} MB")
+    return imgs

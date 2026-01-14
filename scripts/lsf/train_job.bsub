@@ -3,7 +3,7 @@
 #BSUB -W 96:00
 #BSUB -R "rusage[mem=16GB]"
 #BSUB -q bme_gpu
-#BSUB -gpu "num=2:mode=exclusive_process:mps=no"
+#BSUB -gpu "num=1:mode=exclusive_process:mps=no"
 #BSUB -J train_dd
 #BSUB -o ./logs/.%J
 #BSUB -e ./logs/.%J
@@ -22,7 +22,7 @@ echo "Job is running with config file: $CONFIG_FILE"
 echo "--- Config Contents ---"
 cat $CONFIG_FILE
 echo "-----------------------"
-
+#cd /rsstu/users/a/agrinba/DeepDesign/deepdesign
 conda run -p /rsstu/users/a/agrinba/DeepDesign/deepdesign python ./training/training.py --config $CONFIG_FILE
 
 # Optional: Clean up the copied config file

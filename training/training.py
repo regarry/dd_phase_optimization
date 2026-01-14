@@ -60,9 +60,36 @@ def train_one_epoch(model, dataloader, optimizer, criterion, tv_loss, mask_param
         # ---------------------------------------------------------
         # 3. LOSS & OPTIMIZATION
         # ---------------------------------------------------------
-        loss_main = criterion(outputs, targets)
-        loss_reg = tv_loss(mask_param)
-        loss = loss_main + loss_reg
+        criteria_loss = criterion(outputs, targets)
+        total_variation_loss = tv_loss(mask_param)
+        oof_loss = 0.0
+        if config.get('oof_loss_weight', 0.0) > 0.0:
+            # Out-of-Focus (OOF) Light Penalty
+            # Assume targets shape: (Batch, Channels, H, W) or (Batch, H, W)
+            # outputs shape: (Batch, Channels, H, W) or (Batch, H, W)
+            # Bead mask: 1 inside bead volume, 0 outside
+            if targets.dim() == 4:
+                # (Batch, 1, H, W) or (Batch, C, H, W)
+                bead_mask = (targets > 0).float()  # 1 where bead exists
+            else:
+                bead_mask = (targets > 0).float().unsqueeze(1)  # (Batch, 1, H, W)
+
+            # Sum intensity outside bead region
+            oof_mask = 1.0 - bead_mask
+            # outputs may be logits; use sigmoid if BCE, softmax if CE
+            if config['num_classes'] > 1:
+                # For multi-class, sum all non-background classes
+                probs = torch.softmax(outputs, dim=1)
+                # Assume class 0 is background, penalize all others outside bead
+                oof_intensity = (probs[:, 1:, :, :] * oof_mask).sum()
+            else:
+                probs = torch.sigmoid(outputs)
+                oof_intensity = (probs * oof_mask).sum()
+
+            oof_weight = config.get('oof_loss_weight', 1.0)
+            oof_loss = oof_weight * oof_intensity / outputs.numel()
+
+        loss = criteria_loss + total_variation_loss + oof_loss
         
         loss.backward()
         
@@ -84,7 +111,13 @@ def main():
     args = parser.parse_args()
     
     raw_config = load_config(args.config)
-    config = expand_config(raw_config) # <--- ONE CLEAN LINE
+    
+    # 3. Directories
+    model_name = f"{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    training_results_dir = os.path.join(raw_config.get('training_data_path', 'training_results'), model_name)
+    makedirs(training_results_dir)
+    
+    config = expand_config(raw_config, training_results_dir)
 
     # 2. Setup Seeding
     random_seed = config.get('random_seed', 42)
@@ -92,13 +125,10 @@ def main():
     np.random.seed(random_seed)
     random.seed(random_seed)
 
-    # 3. Directories
-    model_name = f"{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-    res_dir = os.path.join(config.get('training_data_path', 'training_results'), model_name)
-    makedirs(res_dir)
+    
     
     # Save the FULL config (including the calculated values) for reproducibility
-    with open(os.path.join(res_dir, 'config.yaml'), 'w') as f:
+    with open(os.path.join(training_results_dir, 'config.yaml'), 'w') as f:
         for k, v in config.items():
             f.write(f"{k}: {v}\n")
 
@@ -107,7 +137,7 @@ def main():
     print(f"   Bead Volume: {config['bead_volume']}")
 
     # 4. Pre-processing & Model
-    generate_bead_templates(config, res_dir)
+    generate_bead_templates(config, training_results_dir)
     
     model = ParallelEndToEndModel(config)
     
@@ -133,7 +163,7 @@ def main():
 
     # 6. Loop
     train_losses = []
-    with MemorySnapshot(os.path.join(res_dir, "crash_snapshot.pickle")) as snapshot:
+    with MemorySnapshot(os.path.join(training_results_dir, "crash_snapshot.pickle")) as snapshot:
         for epoch in range(config['max_epochs']):
             loss = train_one_epoch(model, train_loader, optimizer, criterion, 
                                    tv_loss, mask_param, config, epoch)
@@ -145,12 +175,12 @@ def main():
                 snapshot.end()
             
             # Save artifacts
-            np.savetxt(os.path.join(res_dir, 'train_losses.txt'), train_losses, delimiter=',')
-            save_png(mask_param.detach(), res_dir, str(epoch).zfill(3), config)
-            savePhaseMask(mask_param, epoch, res_dir)
+            np.savetxt(os.path.join(training_results_dir, 'train_losses.txt'), train_losses, delimiter=',')
+            save_png(mask_param.detach(), training_results_dir, str(epoch).zfill(3), config)
+            savePhaseMask(mask_param, epoch, training_results_dir)
             
             if epoch % 5 == 0 or epoch == config['max_epochs'] - 1:
-                torch.save(model.state_dict(), os.path.join(res_dir, f'net_{epoch}.pt'))
+                torch.save(model.state_dict(), os.path.join(training_results_dir, f'net_{epoch}.pt'))
 
 if __name__ == '__main__':
     main()
