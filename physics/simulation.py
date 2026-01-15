@@ -279,7 +279,8 @@ class OpticsSimulation(nn.Module):
         #unpack the config
         self.config = config
         self.bfp_dir = config["bfp_dir"]
-
+        self.magnification_factor = config['4f_magnification'] 
+        self.slm_px = config['slm_px']  # physical pixel size of the SLM
         self.px = config['px']  #the pixel size used
         self.wavelength = config['wavelength']
         self.focal_length_1 = config['focal_length_1']
@@ -770,14 +771,38 @@ class OpticsSimulation(nn.Module):
         return output_layer
     
     def lazy_fourf(self, phase_mask):
+        # 1. Interpolate the Phase Angles (Radians)
+        # Note: We interpolate the angles directly because it's a "phase mask", 
+        # not a complex field yet.
         phase_mask_scaled = F.interpolate(
             phase_mask[None, None, :, :], 
-            scale_factor= self.scale_factor, 
-            mode='bilinear', 
-            align_corners=False
+            scale_factor=self.scale_factor, 
+            mode='bicubic', 
+            align_corners=False,
+            recompute_scale_factor=True
             )   
-        Ta = torch.exp(1j * phase_mask_scaled).to(phase_mask.device) # amplitude transmittance (in our case the slm reflectance)
-        U1 = self.incident_gaussian * Ta # light directly behind the SLM (or in our case reflected from the SLM)
+        
+        # 2. Convert to Optical Field (Amplitude is 1.0)
+        Ta = torch.exp(1j * phase_mask_scaled).to(phase_mask.device) 
+        
+        # 3. Apply Geometric Correction ONLY
+        # We don't need to sum anything. The energy change is purely due to 
+        # magnification M. The correction factor is 1/|M|.
+        # Assuming you have self.mag or can derive it from scale_factor:
+        
+        # If scale_factor includes the pixel ratio: scale = M * (px1/px2)
+        # We need correction = 1/|M|
+        # Let's derive M from scale_factor if you don't store it:
+        # |M| = scale_factor * (self.px / self.slm_px)
+        
+        correction = 1.0 / self.magnification_factor
+        
+        # 4. Compute Output
+        # The correction scales the field amplitude to conserve energy
+        U1 = self.incident_gaussian * Ta * correction
+        
+        # now propagate the light through free space
+        
         return U1
     
     def fivef(self, phase_mask):

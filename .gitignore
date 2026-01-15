@@ -10,3 +10,5 @@ beam_profiles/
 logs/
 psf_images/
 temp_configs/
+*egg-info/
+codebase_dump.txt

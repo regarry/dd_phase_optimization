@@ -3,7 +3,7 @@ from PIL import Image
 import math
 import os
 from datetime import datetime
-from data_utils import extract_datetime_and_epoch
+#from data_utils import extract_datetime_and_epoch
 
 def process_phase_mask(input_phase_array, output_bmp_path, slm_width=None, slm_height=None, padding_mode=False,
                           add_grating=False, grating_period_x=0, grating_period_y=0, grating_angle_deg=0):
@@ -243,7 +243,7 @@ if __name__ == "__main__":
     # IMPORTANT: Replace these paths with the actual paths to your TIFF file and desired output.
     
     # Updated file paths as per your request
-    input_file = "inference_results/beads/800/20251205-152656/mask_phase_epoch_199.tiff"
+    input_file = "training_results/20260115-140727/mask_phase_epoch_99.tiff"
     parent_dir = os.path.dirname(input_file)
     datetime_str = datetime.now().strftime("%Y%m%d-%H%M%S")
 

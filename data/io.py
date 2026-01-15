@@ -168,11 +168,10 @@ def expand_config(config, training_results_dir):
     config['training_results_dir'] = training_results_dir
     config['4f_magnification'] = config['focal_length_2'] / config['focal_length_1']
     config['scale_factor'] = config['phase_mask_upsample_factor'] * config['4f_magnification']
+    config['px'] = config['slm_px'] / config['phase_mask_upsample_factor']
     if config['lens_approach'] == 'lazy_4f':
-        config['px'] = config['slm_px'] / config['phase_mask_upsample_factor']
         config['N'] = int(config['phase_mask_pixel_size'] * config['scale_factor'])
-    else:
-        config['px'] = config['slm_px'] / config['phase_mask_upsample_factor']
+    else:  
         config['N'] = config['phase_mask_upsample_factor'] * config['phase_mask_pixel_size']
 
     # 2. Derive Bead Volume from Image Volume
