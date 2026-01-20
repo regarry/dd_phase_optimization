@@ -18,7 +18,7 @@ class MultiGpuSimulation(nn.Module):
             print(f"⚡ Initializing Physics Engine across {self.num_gpus} GPUs...")
             for i in range(self.num_gpus):
                 device = f'cuda:{i}'
-                sim = OpticsSimulation(config).to(device)
+                sim = OpticsSimulation(config, device)
                 self.replicas.append(sim)
         # CASE B: CPU Only (Fallback)
         else:

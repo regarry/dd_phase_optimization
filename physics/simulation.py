@@ -274,26 +274,22 @@ class Normalize01(nn.Module):
 # ===================================================
 
 class OpticsSimulation(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, device):
         super(OpticsSimulation, self).__init__()
         #unpack the config
         self.config = config
+        self.device = device
         self.bfp_dir = config["bfp_dir"]
         self.magnification_factor = config['4f_magnification'] 
         self.slm_px = config['slm_px']  # physical pixel size of the SLM
         self.px = config['px']  #the pixel size used
         self.wavelength = config['wavelength']
         self.focal_length_1 = config['focal_length_1']
-        #psf_width_pixels = config['psf_width_pixels']
-        #psf_edge_remove = config['psf_edge_remove']
         laser_beam_FWHC = config['laser_beam_FWHC']
         self.refractive_index = config['refractive_index']
-        #max_defocus = config['max_defocus']
-        data_path = self.config['data_path']
         image_volume = config['image_volume']
         psf_keep_radius = config['psf_keep_radius']
         training_results_dir = config['training_results_dir']
-        #device = config['device']
         self.lens_approach = config['lens_approach']
         if self.lens_approach == 'fresnel':
             max_intensity = config.get('max_intensity_fresnel', 5.0e+4)
@@ -301,7 +297,6 @@ class OpticsSimulation(nn.Module):
             max_intensity = config.get('max_intensity_conv', 8.0e+10)
         else:
             max_intensity = config.get('max_intensity_conv', 8.0e+10)    
-        #self.device = device
         self.psf_keep_radius = psf_keep_radius
         self.max_intensity = torch.tensor(max_intensity)
         self.counter = 0
@@ -313,8 +308,6 @@ class OpticsSimulation(nn.Module):
         self.camera_max_adu = config.get('camera_max_adu')  # maximum ADU for the camera
         self.lenless_prop_distance = config.get('lenless_prop_distance', 1.0e-3)  # distance for lensless propagation
             
-        #self.power_2 = config['power_2']
-        #self.pad_to_power_2 = self.power_2-N
         self.pad = 500
         self.datetime = datetime.now().strftime("%Y%m%d-%H%M%S")
         self.conv3d = config.get('conv3d', False)
@@ -413,24 +406,12 @@ class OpticsSimulation(nn.Module):
         # Generate spatial frequencies using np.fft.fftfreq
         # This function correctly produces N frequency bins.
         # The 'd' argument is the spatial sampling interval (px).
-        Fx_raw = np.fft.fftfreq(2*self.N, d=self.px)
-        Fy_raw = np.fft.fftfreq(2*self.N, d=self.px)
 
-        # Shift the zero-frequency component to the center of the array
-        # This reorders the frequencies to be from -Fs/2 to Fs/2 - dF
-        Fx = np.fft.fftshift(Fx_raw)
-        Fy = np.fft.fftshift(Fy_raw)
-        alpha = self.refractive_index * self.wavelength * Fx
-        beta = self.refractive_index * self.wavelength * Fy
-        [ALPHA, BETA] = np.meshgrid(alpha, beta)
-        # go over and make sure that it is not complex
-        gamma_cust = np.zeros_like(ALPHA)
-        for i in range(len(ALPHA)):
-            for j in range(len(ALPHA[0])):
-                if 1 - np.square(ALPHA[i][j]) - np.square(BETA[i][j]) > 0:
-                    gamma_cust[i, j] = np.sqrt(1 - np.square(ALPHA[i][j]) - np.square(BETA[i][j]))
-        gamma_cust = torch.from_numpy(gamma_cust).type(torch.FloatTensor)
-
+        # Padded (2N) for accurate propagation (avoids circular convolution)
+        gamma_padded = self._generate_gamma(2 * self.N)
+        
+        # Unpadded (N) for quick approximations or memory-constrained tasks
+        gamma_unpadded = self._generate_gamma(self.N)
 
         # read bead defocus stack
         # Load all TIFF images sequentially 
@@ -477,7 +458,8 @@ class OpticsSimulation(nn.Module):
         
         
         # 3. Register Angular Spectrum Propagation Constant
-        self.register_buffer('gamma_cust', gamma_cust)
+        self.register_buffer('gamma_padded', gamma_padded)
+        self.register_buffer('gamma_unpadded', gamma_unpadded)
 
         # 4. Register the PSF Image Library
         # This converts the list of images (self.imgs) into one 3D GPU tensor
@@ -492,6 +474,31 @@ class OpticsSimulation(nn.Module):
 
         # 6. Pre-calculate k (Wave number)
         self.k = 2 * self.config['refractive_index'] * np.pi / self.wavelength
+        
+        self.to(self.device)
+      
+    def _generate_gamma(self, grid_size):
+        """
+        Helper: Generates the transfer function kernel for a specific grid size.
+        """
+        # 1. Generate frequency coordinates (GPU)
+        #    fftfreq handles the spacing: f = [-1/(2dx), ... , 1/(2dx)]
+        u = torch.fft.fftfreq(grid_size, d=self.px, device=self.device)
+        u = torch.fft.fftshift(u)
+        
+        # 2. Convert to Alpha/Beta (Direction Cosines)
+        #    alpha = lambda * n * fx
+        coord = u * (self.wavelength * self.refractive_index)
+        
+        # 3. Create Meshgrid
+        ALPHA, BETA = torch.meshgrid(coord, coord, indexing='xy')
+        
+        # 4. Calculate Gamma (SQRT term)
+        #    gamma = sqrt(1 - alpha^2 - beta^2)
+        #    clamp(min=0) handles evanescent waves (complex numbers)
+        gamma = torch.sqrt(torch.clamp(1 - ALPHA**2 - BETA**2, min=0))
+        
+        return gamma.float() 
         
     def circular_aperature(self, arr):
         """
@@ -570,7 +577,7 @@ class OpticsSimulation(nn.Module):
             
             
         # Step 2: Propagation kernel
-        prop_kernel = torch.exp(1j * self.k * self.gamma_cust * z * self.px)
+        prop_kernel = torch.exp(1j * self.k * self.gamma_unpadded * z * self.px)
         
         if debug:
          self._visualize_step("Propagation Kernel", prop_kernel)
@@ -627,7 +634,7 @@ class OpticsSimulation(nn.Module):
         # Note: Ensure self.gamma_cust and self.px are recalculated/scaled 
         # if they depend on the grid size/sampling frequency.
         # We assume self.px and self.gamma_cust match the padded dimensions here.
-        prop_kernel = torch.exp(1j * self.k * self.gamma_cust * z * self.px)
+        prop_kernel = torch.exp(1j * self.k * self.gamma_padded * z * self.px)
         
         # Step 3: FFTSHIFT Kernel
         prop_kernel_shift = torch.fft.fftshift(prop_kernel)

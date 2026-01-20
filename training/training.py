@@ -103,7 +103,8 @@ def train_one_epoch(model, dataloader, optimizer, criterion, tv_loss, mask_param
         total_loss += loss.item()
         
         if batch_idx % 10 == 0:
-            print(f"Epoch [{epoch+1}], Step [{batch_idx+1}], Loss: {loss.item():.4f}")
+            pass
+            #print(f"Epoch [{epoch+1}], Step [{batch_idx+1}], Loss: {loss.item():.4f}")
             
     return total_loss / len(dataloader)
 
@@ -179,6 +180,39 @@ def validate_one_epoch(model, dataloader, criterion, tv_loss, mask_param, config
     
     return avg_loss
 
+class EarlyStopping:
+    def __init__(self, patience=7, min_delta=0):
+        """
+        Args:
+            patience (int): How many epochs to wait after last time validation loss improved.
+                            Default: 7
+            min_delta (float): Minimum change in the monitored quantity to qualify as an improvement.
+                               Default: 0
+            path (str): Path for the checkpoint to be saved to.
+                               Default: 'checkpoint.pt'
+        """
+        self.patience = patience
+        self.min_delta = min_delta
+        self.counter = 0
+        self.best_loss = None
+        self.early_stop = False
+
+    def __call__(self, val_loss):
+        if self.best_loss is None:
+            self.best_loss = val_loss
+            #self.save_checkpoint(val_loss, model)
+        elif val_loss > self.best_loss - self.min_delta:
+            # Loss didn't improve enough
+            self.counter += 1
+            print(f'EarlyStopping counter: {self.counter} out of {self.patience}')
+            if self.counter >= self.patience:
+                self.early_stop = True
+        else:
+            # Loss improved
+            self.best_loss = val_loss
+            #self.save_checkpoint(val_loss, model)
+            self.counter = 0
+
 def main():
     start_time = time.time()
     # 1. Load & Expand Config
@@ -229,10 +263,16 @@ def main():
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, 
         mode='min', 
-        factor=0.5, 
-        patience=10, 
+        factor=config['learning_rate_scheduler_factor'], 
+        patience=config['learning_rate_scheduler_patience'], 
         verbose=True
     )
+    
+    early_stopper = EarlyStopping(
+        patience=config['early_stopping_patience'], 
+        min_delta=config['early_stopping_min_delta']
+    )
+    
     # Loss setup
     if config['num_classes'] > 1:
         weights = torch.tensor(config.get('weights', [1,1,1])).float().to(main_device)
@@ -276,6 +316,7 @@ def main():
             train_losses.append(loss)
             val_loss = validate_one_epoch(model, val_loader, criterion, tv_loss, mask_param, config, epoch)
             scheduler.step(val_loss)
+            early_stopper(val_loss)
             current_lr = optimizer.param_groups[0]['lr']
             print(f"🟢 Epoch {epoch+1} Loss: {loss:.4f}| Val Loss: {val_loss:.4f}| LR: {current_lr:.2e}")
             if epoch == 0:
@@ -287,6 +328,11 @@ def main():
             np.savetxt(os.path.join(training_results_dir, 'train_losses.txt'), train_losses, delimiter=',')
             save_png(mask_param.detach(), training_results_dir, str(epoch).zfill(3), config)
             savePhaseMask(mask_param, epoch, training_results_dir)
+            
+            if early_stopper.early_stop:
+                print("Early stopping triggered! Training stopped.")
+                torch.save(model.state_dict(), os.path.join(training_results_dir, f'net_{epoch}.pt'))
+                break
             
             if epoch % 5 == 0 or epoch == config['max_epochs'] - 1:
                 torch.save(model.state_dict(), os.path.join(training_results_dir, f'net_{epoch}.pt'))

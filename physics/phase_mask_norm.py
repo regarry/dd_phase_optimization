@@ -243,7 +243,7 @@ if __name__ == "__main__":
     # IMPORTANT: Replace these paths with the actual paths to your TIFF file and desired output.
     
     # Updated file paths as per your request
-    input_file = "training_results/20260115-140727/mask_phase_epoch_99.tiff"
+    input_file = "training_results/20260115-180254/mask_phase_epoch_26.tiff"
     parent_dir = os.path.dirname(input_file)
     datetime_str = datetime.now().strftime("%Y%m%d-%H%M%S")
 
