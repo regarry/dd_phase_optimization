@@ -155,11 +155,11 @@ def main():
 
         # Save as TIFF (like mask_inference)
         beam_profile_tiff_path = os.path.join(output_subdir, "beam_profile.tiff")
-        skimage.io.imsave(beam_profile_tiff_path, (beam_profile))
+        skimage.io.imsave(beam_profile_tiff_path, (beam_profile), check_contrast=False)
         print(f"Saved beam profile as TIFF to {beam_profile_tiff_path}")
         
         intensity_tiff_path = os.path.join(output_subdir, "intensity_profile.tiff")
-        skimage.io.imsave(intensity_tiff_path, (intensity_profile))
+        skimage.io.imsave(intensity_tiff_path, (intensity_profile), check_contrast=False)
         print(f"Saved beam profile as TIFF to {intensity_tiff_path}")
 
         # Save as PNG for easy viewing

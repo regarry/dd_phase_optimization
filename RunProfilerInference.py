@@ -8,8 +8,8 @@ from datetime import datetime
 # python RunProfilerInference.py
 if __name__ == "__main__":
     # Set your arguments here
-    training_folder = "./training_results/20260107-143700"
-    epoch = 95
+    training_folder = "./training_results/800_beads_phase_model_20251021-111735"
+    epoch = 199
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     inference_results = os.path.join(training_folder, timestamp)
     beam_profiles = inference_results

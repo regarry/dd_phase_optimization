@@ -869,7 +869,12 @@ class PhysicalLayer(nn.Module):
             z_mm = z_px*self.px*1.0e3
             save_path = os.path.join(output_beam_sections_dir, f'intensity_{i:04d}_{z_mm:.2f}.tiff')
             #print(f'{i} {z_px}')
-            skimage.io.imsave(save_path, intensity_at_z[i])
+            try:
+                skimage.io.imsave(save_path, intensity_at_z[i], check_contrast=True)
+            except Exception as e:
+                print(f"Error saving intensity profile at z={z_mm:.2f}mm and i = {i}: {e}")
+            if intensity_at_z[i] is None == 0:
+                 print("Error: intensity_profile {i} is empty. Nothing to save.")
         
         def visualize_column_sums(P: np.ndarray, output_folder) -> np.ndarray:
             """
@@ -908,7 +913,9 @@ class PhysicalLayer(nn.Module):
 
             return column_sums_per_image
         
-        column_sums_image = visualize_column_sums(intensity_at_z, output_folder)
+        effective_intensity_region = intensity_at_z[:,center_row_idx - 100:center_row_idx + 100, center_col_idx - 100:center_col_idx + 100]
+        
+        column_sums_image = visualize_column_sums(effective_intensity_region, output_folder)
     
         # save cross_section_profile as tiff in 32 bit float format
         #cross_section_save_path = os.path.join(output_folder, 'cross_section_profile.tiff')
