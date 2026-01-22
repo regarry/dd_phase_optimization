@@ -4,7 +4,7 @@ import numpy as np
 import torch
 import skimage.io
 import matplotlib.pyplot as plt
-from datetime import datetime
+#from datetime import datetime
 from data.io import load_config, normalize_to_uint16
 #from beam_profile_gen import BeamProfiler
 from physics.bessel import generate_axicon_phase_mask
@@ -120,7 +120,7 @@ def main():
     # to test 9f try running results with fourier lens
     #lens_approach = 'fourier_lens'  # temporarily force fourier lens for testing
     
-    phys_layer = OpticsSimulation(config).to(device)
+    phys_layer = OpticsSimulation(config, device)
     phys_layer.eval()
     if not lens_approach == 'lazy_4f':
         if phase_mask_upsample_factor > 1:
@@ -140,7 +140,7 @@ def main():
         elif lens_approach == 'lensless':
             output_layer = phys_layer.lensless(mask_tensor)
         elif lens_approach == '4f':
-            output_layer = phys_layer.fourf(mask_tensor)
+            output_layer = phys_layer.fourf(mask_tensor, phys_layer.pad_4f)
         elif lens_approach == '9f':
             output_layer = phys_layer.ninef(mask_tensor)
         elif lens_approach == 'lazy_4f':

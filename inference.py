@@ -1,0 +1,148 @@
+import os
+import sys
+import time
+# Add the parent directory to sys.path so we can import 'data', 'models', etc.
+import argparse
+import numpy as np
+import torch
+import random
+import pickle
+import torch.nn as nn
+import torch.optim as optim
+from torch.optim import Adam
+from torch.utils.data import DataLoader
+from datetime import datetime
+import skimage
+
+# --- Local Imports ---
+from data.io import expand_config, load_config, makedirs, save_png, savePhaseMask
+from data.datasets import SyntheticMicroscopeData, ValidationDataset
+from models.wrappers import ParallelEndToEndModel
+from data.preprocessing import generate_bead_templates
+from utils.debug import MemorySnapshot, print_all_gpu_stats
+from physics.masks import get_initial_phase_mask
+from physics.simulation import TotalVariationLoss
+
+def inference_one_epoch(model, dataloader, mask_param, config):
+    """
+    Runs one epoch of validation.
+    """
+    model.eval() # Set model to evaluation mode
+    
+    main_device = torch.device(config.get('cnn_device', 'cuda:0'))
+    
+    # Disable gradient calculation for validation
+    with torch.no_grad():
+        for batch_idx, (bead_xyz_list, targets) in enumerate(dataloader):
+            # ---------------------------------------------------------
+            # 1. MOVE DATA TO MAIN GPU
+            # ---------------------------------------------------------
+            bead_xyz_list = bead_xyz_list.to(main_device)
+            targets = targets.to(main_device)
+            
+            # Handle target dimensions (Mirroring training logic)
+            if config['num_classes'] > 1:
+                if targets.dim() == 4 and targets.shape[1] == 1:
+                    targets = targets.squeeze(1).long()
+            else:
+                pass
+
+            # ---------------------------------------------------------
+            # 2. FORWARD PASS
+            # ---------------------------------------------------------
+            outputs = model(mask_param, bead_xyz_list)
+            
+            # visualize the outputs and targets
+
+def main():
+    """
+    Main function to run combined inference for physical and CNN mask models.
+    """
+    # Parse arguments
+    parser = argparse.ArgumentParser(description="Combined inference for physical and CNN mask models.")
+    parser.add_argument("--input_dir", type=str, required=True, help="Directory containing config.yaml and labels.pickle")
+    parser.add_argument("--epoch", type=int, required=True, help="Desired epoch for the mask (closest available at x*10+1)")
+    parser.add_argument("--res_dir", type=str, default="inference_results", help="Directory to save inference outputs")
+    parser.add_argument("--device", type=str, default="cuda:0", help="Device to run on")
+    parser.add_argument("--num_inferences", type=int, default=1, help="Number of samples for inference (if 0, use all keys)")
+    parser.add_argument("--lens_approach", type=str, default="", help="Override lens_approach in config.yaml for PhysicalLayer")
+    parser.add_argument("--empty_mask", action="store_true", help="Run inference with an empty mask")
+    parser.add_argument("--paper_mask", type=str, default="", help="File path to paper phase mask for inference")
+    parser.add_argument("--no_noise", action="store_true", help="Disable noise in PhysicalLayer inference")
+    parser.add_argument("--model_path", type=str, default="", help="Optional: Path to the CNN pretrained model checkpoint")
+    parser.add_argument("--beam_3d_sections", type=str, default="beam_3d_sections", help="Optional: Path to the beam 3d sections file")
+    parser.add_argument("--generate_beam_profile", action="store_true", help="Generate beam profile for the input mask (default: off)")
+    parser.add_argument("--x_min", type=int, default=-100, help="Minimum z value for beam section generation")
+    parser.add_argument("--x_max", type=int, default=100, help="Maximum z value for beam section generation")
+    parser.add_argument("--y_min", type=int, default=-50, help="Minimum y value for beam section generation")
+    parser.add_argument("--y_max", type=int, default=50, help="Maximum y value for beam section generation")
+    parser.add_argument("--max_intensity", type=float, help="Maximum intensity for the mask")
+    parser.add_argument("--bead_volume", action="store_true", help="Save bead volume as tiff files")
+    parser.add_argument("--plot_train_loss", action="store_true", help="Plot the training loss over time from train_losses.txt in input_dir")
+    args = parser.parse_args()
+    
+    
+    config = load_config(os.path.join(args.input_dir, 'config.yaml'))
+    config['inference_epoch'] = args.epoch
+    
+    # Automatically determine CNN model path if not provided
+    if not args.model_path:
+        # x is an integer that begins at 0 and increases by 1.
+        
+        # x0 = int((args.epoch - 1) / 10)
+        # candidate_low = x0 * 10 + 1
+        # candidate_high = (x0 + 1) * 10 
+        # if abs(args.epoch - candidate_low) <= abs(candidate_high - args.epoch):
+        #     chosen_epoch = candidate_low
+        # else:
+        #     chosen_epoch = candidate_high
+        chosen_epoch = args.epoch
+        model_file = f"net_{chosen_epoch}.pt"
+        args.model_path = os.path.join(args.input_dir, model_file)
+        print(f"Automatically using CNN model: {args.model_path}")
+        
+    config["model_path"] = args.model_path
+    learned_lens_approach = config['lens_approach']
+    
+    # Load mask from tiff file (for both models)
+    mask_path = os.path.join(args.input_dir, f"mask_phase_epoch_{args.epoch}.tiff")
+    mask_np = skimage.io.imread(mask_path)
+    mask_tensor = torch.from_numpy(mask_np).type(torch.FloatTensor).to(device)
+    mask_param = torch.nn.Parameter(mask_tensor, requires_grad=False)
+    
+    # Load labels
+    labels_path = os.path.join(args.input_dir, "labels.pickle")
+    with open(labels_path, 'rb') as f:
+        labels_dict = pickle.load(f)
+    
+    #make a dataaloader
+    # Reconstructing val_samples from labels_dict
+    val_samples = []
+
+    # Sorting by key ensures the order remains the same as the original loop
+    for i in sorted(labels_dict.keys()):
+        item = labels_dict[i]
+        # Converting back to numpy arrays (standard for most ML data_pairs)
+        sample_pair = (np.array(item['xyz']), np.array(item['target']))
+        val_samples.append(sample_pair)
+        val_ds = ValidationDataset(val_samples)
+        val_loader = DataLoader(val_ds, batch_size=config['batch_size'], shuffle=False, num_workers=4)
+    
+    # Instantiate CNN model based on config and load checkpoint
+    cnn_config = config.copy()
+    cnn_config['skip_noise'] = False
+    if config.get("use_unet", False):
+        cnn_model = ParallelEndToEndModel(cnn_config)
+        print("Instantiated ")
+    else:
+        pass
+    cnn_model
+    cnn_model.load_state_dict(torch.load(args.model_path))
+    cnn_model.eval()
+
+    
+    inference_one_epoch(cnn_model, val_loader, mask_param, config)
+    
+    
+if __name__ == "__main__":
+    main()

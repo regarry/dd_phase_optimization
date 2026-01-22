@@ -280,8 +280,8 @@ class OpticsSimulation(nn.Module):
         self.config = config
         self.device = device
         self.bfp_dir = config["bfp_dir"]
-        self.magnification_factor = config['4f_magnification'] 
-        self.slm_px = config['slm_px']  # physical pixel size of the SLM
+        self.magnification_factor = config.get('4f_magnification', 0.0)
+        self.slm_px = config.get('slm_px', config['px'])  # physical pixel size of the SLM
         self.px = config['px']  #the pixel size used
         self.wavelength = config['wavelength']
         self.focal_length_1 = config['focal_length_1']
@@ -307,15 +307,17 @@ class OpticsSimulation(nn.Module):
         self.illumination_scaling_factor = config.get('illumination_scaling_factor')  # scaling factor for the illumination
         self.camera_max_adu = config.get('camera_max_adu')  # maximum ADU for the camera
         self.lenless_prop_distance = config.get('lenless_prop_distance', 1.0e-3)  # distance for lensless propagation
-            
-        self.pad = 500
+        self.extra_prop_distance = config.get('extra_prop_distance', 0.0)  # extra distance for propagation    
+        #self.pad = 500
         self.datetime = datetime.now().strftime("%Y%m%d-%H%M%S")
         self.conv3d = config.get('conv3d', False)
         self.aperature = config.get('aperature', False)
         self.phase_mask_upsample_factor = config.get('phase_mask_upsample_factor', 1)  # scale factor for the phase mask upsampling
-        self.N = config['N']
-        self.scale_factor = config['scale_factor']
+        
+        self.scale_factor = config.get('scale_factor', 0.0)
         self.phase_mask_pixel_size = config['phase_mask_pixel_size']    
+        self.N = config.get('N', self.phase_mask_upsample_factor * self.phase_mask_pixel_size)
+        self.pad_4f = config.get('pad_4f', False)
         #self.N = self.phase_mask_upsample_factor * self.phase_mask_pixel_size # grid size for the physics calculations
         #self.z_spacing = config.get('z_spacing', 0)
         #self.z_img_mode = config.get('z_img_mode', 'edgecenter')
@@ -388,8 +390,7 @@ class OpticsSimulation(nn.Module):
         #self.Q2 = torch.from_numpy(Q2_val).type(torch.cfloat).to(device)
         
         # angular specturm
-        k = 2 * self.refractive_index * np.pi / self.wavelength
-        self.k = k
+        self.k = 2 * self.refractive_index * np.pi / self.wavelength
        
         # phy_x = self.N * self.px  # physical width (meters)
         # phy_y = self.N * self.px  # physical length (meters)
@@ -408,10 +409,10 @@ class OpticsSimulation(nn.Module):
         # The 'd' argument is the spatial sampling interval (px).
 
         # Padded (2N) for accurate propagation (avoids circular convolution)
-        gamma_padded = self._generate_gamma(2 * self.N)
+        gamma_padded = self._generate_gamma((2 * self.N, 2 * self.N))
         
         # Unpadded (N) for quick approximations or memory-constrained tasks
-        gamma_unpadded = self._generate_gamma(self.N)
+        gamma_unpadded = self._generate_gamma((self.N, self.N))
 
         # read bead defocus stack
         # Load all TIFF images sequentially 
@@ -460,6 +461,8 @@ class OpticsSimulation(nn.Module):
         # 3. Register Angular Spectrum Propagation Constant
         self.register_buffer('gamma_padded', gamma_padded)
         self.register_buffer('gamma_unpadded', gamma_unpadded)
+        #self.register_buffer('evanescent_mask_padded', evanescent_mask_padded)
+        #self.register_buffer('evanescent_mask_unpadded', evanescent_mask_unpadded)
 
         # 4. Register the PSF Image Library
         # This converts the list of images (self.imgs) into one 3D GPU tensor
@@ -473,32 +476,47 @@ class OpticsSimulation(nn.Module):
         self.register_buffer('z_depth_buffer', z_depths)
 
         # 6. Pre-calculate k (Wave number)
-        self.k = 2 * self.config['refractive_index'] * np.pi / self.wavelength
+        #self.k = 2 * self.config['refractive_index'] * np.pi / self.wavelength
         
         self.to(self.device)
       
     def _generate_gamma(self, grid_size):
         """
-        Helper: Generates the transfer function kernel for a specific grid size.
+        Generates the transfer function kernel (Gamma) in unshifted (standard FFT) layout.
+        Standard FFT layout has DC (freq=0) at indices [0,0].
         """
-        # 1. Generate frequency coordinates (GPU)
-        #    fftfreq handles the spacing: f = [-1/(2dx), ... , 1/(2dx)]
-        u = torch.fft.fftfreq(grid_size, d=self.px, device=self.device)
-        u = torch.fft.fftshift(u)
+        ny, nx = grid_size
         
-        # 2. Convert to Alpha/Beta (Direction Cosines)
-        #    alpha = lambda * n * fx
-        coord = u * (self.wavelength * self.refractive_index)
+        # 1. Generate frequency coordinates directly in standard FFT order
+        #    fftfreq returns: [0, 1, ..., N/2-1, -N/2, ..., -1] / (d*N)
+        #    This matches the output of fft2 without needing ifftshift later.
+        fx = torch.fft.fftfreq(nx, d=self.px, device=self.device)
+        fy = torch.fft.fftfreq(ny, d=self.px, device=self.device)
         
-        # 3. Create Meshgrid
-        ALPHA, BETA = torch.meshgrid(coord, coord, indexing='xy')
+        # 2. Create Meshgrid (unshifted)
+        FX, FY = torch.meshgrid(fx, fy, indexing='xy')
+        
+        # 3. Convert to Alpha/Beta (Direction Cosines)
+        #    alpha = fx * lambda_medium = fx * (lambda_0 / n)
+        wavelength_medium = self.wavelength / self.refractive_index
+        alpha = FX * wavelength_medium
+        beta  = FY * wavelength_medium
         
         # 4. Calculate Gamma (SQRT term)
-        #    gamma = sqrt(1 - alpha^2 - beta^2)
-        #    clamp(min=0) handles evanescent waves (complex numbers)
-        gamma = torch.sqrt(torch.clamp(1 - ALPHA**2 - BETA**2, min=0))
+        #    We separate the argument to handle evanescent waves properly
+        #    Gamma = sqrt(1 - alpha^2 - beta^2)
+        argument = 1 - alpha**2 - beta**2
         
-        return gamma.float() 
+        # Handle Evanescent Waves:
+        # Option A (Hard Filter): Set evanescent modes to 0 (blocks them).
+        # This prevents 'ringing' from high-freq noise.
+        #evanescent_mask = (argument >= 0) 
+        
+        # Clamp to 0 just for the sqrt calculation to avoid NaNs, 
+        # but we will multiply by the mask later.
+        gamma = torch.sqrt(torch.clamp(argument, min=0))
+        
+        return gamma.float()#, evanescent_mask.float()
         
     def circular_aperature(self, arr):
         """
@@ -559,102 +577,209 @@ class OpticsSimulation(nn.Module):
         plt.tight_layout()
         plt.show(block=False)
         
-    def angular_spectrum_propagation(self, input_field, z, debug=False):
+    def angular_spectrum_propagation(self, input_field, z, pad=False, debug=False):
         """
-        Angular spectrum propagation for a given output_layer and z pixel distance.
-
+        ASM propagation.
         Args:
-            output_layer (torch.Tensor): The complex field to propagate.
-            z (float or int): The z pixel distance for propagation.
-
-        Returns:
-            torch.Tensor: The propagated intensity (real-valued).
+            input_field (torch.Tensor): Complex field (..., H, W).
+            z (float): Propagation distance in PIXELS.
         """
-        # Step 1: FFT2
-        fft2_field = torch.fft.fft2(input_field)
-        if debug:
-            self._visualize_step("FFT2(output_layer)", fft2_field)
-            
-            
-        # Step 2: Propagation kernel
-        prop_kernel = torch.exp(1j * self.k * self.gamma_unpadded * z * self.px)
+        # Handle dimensions
+        *batch_dims, ny, nx = input_field.shape
         
+        if pad:
+            # Pad to double size (2*N) to avoid circular convolution artifacts
+            pad_x = nx // 2
+            pad_y = ny // 2
+            # F.pad expects (left, right, top, bottom)
+            padded_field = torch.nn.functional.pad(input_field, (pad_x, pad_x, pad_y, pad_y))
+        else:
+            padded_field = input_field
+
+        # 1. FFT (Standard layout)
+        fft_field = torch.fft.fft2(padded_field)
+
+        # 2. Select correct pre-computed kernels
+        # Ensure these are broadcastable against batch_dims if needed
+        if pad:
+            gamma = self.gamma_padded
+            #mask = self.evanescent_mask_padded
+        else:
+            gamma = self.gamma_unpadded
+            #mask = self.evanescent_mask_unpadded
+
+        # 3. Create Transfer Function
+        # z is in pixels, convert to meters
+        prop_dist = z * self.px 
+        
+        # H = exp(j * k_medium * gamma * z) * mask
+        # Ensure self.k includes refractive index: k = 2*pi*n/lambda_0
+        phase = 1j * self.k * gamma * prop_dist
+        H = torch.exp(phase) #* mask
+
         if debug:
-         self._visualize_step("Propagation Kernel", prop_kernel)
+            # Visualization logic (using fftshift for human readability)
+            pass 
+
+        # 4. Apply Transfer Function & Inverse FFT
+        U_prime = fft_field * H
+        output_padded = torch.fft.ifft2(U_prime)
+
+        # 5. Crop
+        if pad:
+            cy, cx = output_padded.shape[-2:] # Use last two dims
+            start_y = cy // 2 - ny // 2
+            start_x = cx // 2 - nx // 2
+            # Crop preserving batch dimensions
+            output_field = output_padded[..., start_y:start_y+ny, start_x:start_x+nx]
+        else:
+            output_field = output_padded
+            
+        # calculate size of padded field for check sampling
+        grid_size = (ny * (2 if pad else 1), nx * (2 if pad else 1))
+        
+        self.check_sampling_limit(z, grid_size, verbose=debug)
+        
+        return output_field
+    
+    def check_sampling_limit(self, z_pixels, grid_size, verbose=True):
+        """
+        Checks if the propagation distance causes aliasing in the transfer function.
+        Based on the criteria: z_crit = (N * dx^2) / lambda
+        
+        Args:
+            z_pixels (float): Propagation distance in pixels.
+            grid_size (tuple): (ny, nx) of the grid (use the PADDED size!).
+            verbose (bool): If True, prints a warning message.
+            
+        Returns:
+            bool: True if safe, False if aliasing is likely.
+        """
+        ny, nx = grid_size
+        
+        # Use the smallest dimension for the most conservative limit
+        N = min(ny, nx)
+        
+        # Convert z from pixels to meters for calculation
+        z_meters = z_pixels * self.px
+        
+        # Calculate Critical Distance (Safe Limit)
+        # Formula: z_max = (N * dx^2) / lambda
+        # This ensures the phase change between frequency pixels is < pi at the Nyquist edge.
+        wavelength_medium = self.wavelength / self.refractive_index
+        z_crit = (N * (self.px ** 2)) / wavelength_medium
+        
+        is_safe = z_meters < z_crit
+        
+        if verbose:
+            status = "SAFE" if is_safe else "WARNING: ALIASING LIKELY"
+            print(f"--- ASM Sampling Check ---")
+            print(f"Prop Distance: {z_meters*1e3:.4f} mm")
+            print(f"Critical Limit: {z_crit*1e3:.4f} mm")
+            print(f"Status: {status}")
+            
+        if not is_safe:
+            print(f"  -> You are at {z_meters / z_crit * 100:.1f}% of the limit.")
+            print(f"  -> Suggestion: Use 'Band-Limited ASM' or switch to Fresnel propagation.")
+                
+        return is_safe
+        
+    # def angular_spectrum_propagation_old(self, input_field, z, debug=False):
+    #     """
+    #     Angular spectrum propagation for a given output_layer and z pixel distance.
+
+    #     Args:
+    #         output_layer (torch.Tensor): The complex field to propagate.
+    #         z (float or int): The z pixel distance for propagation.
+
+    #     Returns:
+    #         torch.Tensor: The propagated intensity (real-valued).
+    #     """
+    #     # Step 1: FFT2
+    #     fft2_field = torch.fft.fft2(input_field)
+    #     if debug:
+    #         self._visualize_step("FFT2(output_layer)", fft2_field)
+            
+            
+    #     # Step 2: Propagation kernel
+    #     prop_kernel = torch.exp(1j * self.k * self.gamma_unpadded * z * self.px)
+        
+    #     if debug:
+    #      self._visualize_step("Propagation Kernel", prop_kernel)
          
-         # Step 3: FFTSHIFT
-        prop_kernel_shift = torch.fft.fftshift(prop_kernel)
-        if debug:
-            self._visualize_step("FFTSHIFT(prop_kernel)", prop_kernel_shift)
+    #      # Step 3: FFTSHIFT
+    #     prop_kernel_shift = torch.fft.fftshift(prop_kernel)
+    #     if debug:
+    #         self._visualize_step("FFTSHIFT(prop_kernel)", prop_kernel_shift)
          
-        # Step 4: Multiply
-        mult = fft2_field * prop_kernel_shift
-        if debug:
-            self._visualize_step("Multiplied Spectrum", mult)
+    #     # Step 4: Multiply
+    #     mult = fft2_field * prop_kernel_shift
+    #     if debug:
+    #         self._visualize_step("Multiplied Spectrum", mult)
             
-        # # Step 5: IFFTSHIFT
-        # ifftshifted = torch.fft.ifftshift(mult)
-        # if debug:
-        #     self._visualize_step("IFFTSHIFT(Multiplied)", ifftshifted)
+    #     # # Step 5: IFFTSHIFT
+    #     # ifftshifted = torch.fft.ifftshift(mult)
+    #     # if debug:
+    #     #     self._visualize_step("IFFTSHIFT(Multiplied)", ifftshifted)
             
-        # Step 6: IFFT2
-        U1 = torch.fft.ifft2(mult)
-        if debug:
-            self._visualize_step("IFFT2", U1)
-            self._visualize_real("Intensity (real(U1 * conj(U1)))", torch.real(U1 * torch.conj(U1)))
+    #     # Step 6: IFFT2
+    #     U1 = torch.fft.ifft2(mult)
+    #     if debug:
+    #         self._visualize_step("IFFT2", U1)
+    #         self._visualize_real("Intensity (real(U1 * conj(U1)))", torch.real(U1 * torch.conj(U1)))
         
-        #U1_old = torch.fft.ifft2(
-        #        torch.fft.fft2(output_layer)
-        #        * torch.fft.fftshift(torch.exp(1j * self.k * self.gamma_cust * z * self.px))
-        #)
+    #     #U1_old = torch.fft.ifft2(
+    #     #        torch.fft.fft2(output_layer)
+    #     #        * torch.fft.fftshift(torch.exp(1j * self.k * self.gamma_cust * z * self.px))
+    #     #)
         
-        #if debug:
-        #    self._visualize_step("U1_old", U1_old)
-        #    self._visualize_real("Intensity (real(U1_old * conj(U1_old)))", torch.real(U1_old * torch.conj(U1_old)))
-        #U1 = torch.real(U1 * torch.conj(U1))
-        return U1
+    #     #if debug:
+    #     #    self._visualize_step("U1_old", U1_old)
+    #     #    self._visualize_real("Intensity (real(U1_old * conj(U1_old)))", torch.real(U1_old * torch.conj(U1_old)))
+    #     #U1 = torch.real(U1 * torch.conj(U1))
+    #     return U1
     
 
-    def angular_spectrum_propagation_padded(self, input_field, z, debug=False):
-        """
-        Angular spectrum propagation with 2x zero-padding to prevent aliasing.
-        """
-        # Get original dimensions
-        h, w = input_field.shape[-2:]
+    # def angular_spectrum_propagation_padded(self, input_field, z, debug=False):
+    #     """
+    #     Angular spectrum propagation with 2x zero-padding to prevent aliasing.
+    #     """
+    #     # Get original dimensions
+    #     h, w = input_field.shape[-2:]
         
-        # Step 0: Zero-pad to double the size (2H, 2W)
-        # This prevents the circular convolution wrap-around artifacts
-        pad_h, pad_w = h // 2, w // 2
-        padded_field = F.pad(input_field, (pad_w, pad_w, pad_h, pad_h), mode='constant', value=0)
+    #     # Step 0: Zero-pad to double the size (2H, 2W)
+    #     # This prevents the circular convolution wrap-around artifacts
+    #     pad_h, pad_w = h // 2, w // 2
+    #     padded_field = F.pad(input_field, (pad_w, pad_w, pad_h, pad_h), mode='constant', value=0)
         
-        # Step 1: FFT2 of padded field
-        fft2_field = torch.fft.fft2(padded_field)
+    #     # Step 1: FFT2 of padded field
+    #     fft2_field = torch.fft.fft2(padded_field)
         
-        # Step 2: Propagation kernel
-        # Note: Ensure self.gamma_cust and self.px are recalculated/scaled 
-        # if they depend on the grid size/sampling frequency.
-        # We assume self.px and self.gamma_cust match the padded dimensions here.
-        prop_kernel = torch.exp(1j * self.k * self.gamma_padded * z * self.px)
+    #     # Step 2: Propagation kernel
+    #     # Note: Ensure self.gamma_cust and self.px are recalculated/scaled 
+    #     # if they depend on the grid size/sampling frequency.
+    #     # We assume self.px and self.gamma_cust match the padded dimensions here.
+    #     prop_kernel = torch.exp(1j * self.k * self.gamma_padded * z * self.px)
         
-        # Step 3: FFTSHIFT Kernel
-        prop_kernel_shift = torch.fft.fftshift(prop_kernel)
+    #     # Step 3: FFTSHIFT Kernel
+    #     prop_kernel_shift = torch.fft.fftshift(prop_kernel)
         
-        # Step 4: Multiply
-        mult = fft2_field * prop_kernel_shift
+    #     # Step 4: Multiply
+    #     mult = fft2_field * prop_kernel_shift
         
-        # Step 5: IFFT2
-        U_padded = torch.fft.ifft2(mult)
+    #     # Step 5: IFFT2
+    #     U_padded = torch.fft.ifft2(mult)
         
-        # Step 6: Crop back to original size
-        # Removing the padding to return the field in the original dimensions
-        U1 = U_padded[..., pad_h : pad_h + h, pad_w : pad_w + w]
+    #     # Step 6: Crop back to original size
+    #     # Removing the padding to return the field in the original dimensions
+    #     U1 = U_padded[..., pad_h : pad_h + h, pad_w : pad_w + w]
         
-        if debug:
-            self._visualize_step("Padded Field", padded_field)
-            self._visualize_step("IFFT2 (Padded)", U_padded)
-            self._visualize_real("Final Intensity", torch.real(U1 * torch.conj(U1)))
+    #     if debug:
+    #         self._visualize_step("Padded Field", padded_field)
+    #         self._visualize_step("IFFT2 (Padded)", U_padded)
+    #         self._visualize_real("Final Intensity", torch.real(U1 * torch.conj(U1)))
             
-        return U1
+    #     return U1
     
     def fresnel_propagation(self, input_img, z, debug=False):
         """
@@ -764,15 +889,28 @@ class OpticsSimulation(nn.Module):
         output_layer = Uo
         return output_layer
 
-    def fourf(self, phase_mask):
+    def fourf(self, phase_mask, pad):
         Ta = torch.exp(1j * phase_mask).to(phase_mask.device) # amplitude transmittance (in our case the slm reflectance)
         Uo = self.incident_gaussian * Ta # light directly behind the SLM (or in our case reflected from the SLM)
-        Ul1 = self.angular_spectrum_propagation(Uo, self.focal_length_1/self.px, debug = False) # light directly infront of the lens
+        Ul1 = self.angular_spectrum_propagation(Uo, self.focal_length_1/self.px,pad=pad, debug = False) # light directly infront of the lens
         Ul1_prime = Ul1 * self.B1 # light after the lens
-        Ul2 = self.angular_spectrum_propagation(Ul1_prime, (self.focal_length_1+self.focal_length_2)/self.px, debug = False) # light at the back focal plane of the lens
+        Ul2 = self.angular_spectrum_propagation(Ul1_prime, (self.focal_length_1+self.focal_length_2)/self.px,pad=pad, debug = False) # light at the back focal plane of the lens
         #Ul2 = self.angular_spectrum_propagation(Uf1, self.focal_length_2) # light directly infront of the lens
         Ul2_prime = Ul2 * self.B2 # light after the 2nd lens
-        Uf2 = self.angular_spectrum_propagation(Ul2_prime, self.focal_length_2/self.px, debug = False) # light at the back focal plane of the lens
+        Uf2 = self.angular_spectrum_propagation(Ul2_prime, self.focal_length_2/self.px,pad = pad, debug = False) # light at the back focal plane of the lens
+        output_layer = Uf2[None, None, :, :] # light at the back focal plane of the lens
+       
+        return output_layer
+    
+    def fourfplus(self, phase_mask):
+        Ta = torch.exp(1j * phase_mask).to(phase_mask.device) # amplitude transmittance (in our case the slm reflectance)
+        Uo = self.incident_gaussian * Ta # light directly behind the SLM (or in our case reflected from the SLM)
+        Ul1 = self.angular_spectrum_propagation(Uo, self.focal_length_1/self.px,pad=True, debug = False) # light directly infront of the lens
+        Ul1_prime = Ul1 * self.B1 # light after the lens
+        Ul2 = self.angular_spectrum_propagation(Ul1_prime, (self.focal_length_1+self.focal_length_2)/self.px,pad=True, debug = False) # light at the back focal plane of the lens
+        #Ul2 = self.angular_spectrum_propagation(Uf1, self.focal_length_2) # light directly infront of the lens
+        Ul2_prime = Ul2 * self.B2 # light after the 2nd lens
+        Uf2 = self.angular_spectrum_propagation(Ul2_prime, (self.focal_length_2+self.extra_prop_distance)/self.px,pad = True, debug = False) # light at the back focal plane of the lens
         output_layer = Uf2[None, None, :, :] # light at the back focal plane of the lens
        
         return output_layer
@@ -808,9 +946,11 @@ class OpticsSimulation(nn.Module):
         # The correction scales the field amplitude to conserve energy
         U1 = self.incident_gaussian * Ta * correction
         
+        U2 = self.angular_spectrum_propagation(U1, self.extra_prop_distance/self.px, pad=True, debug=False)
+        
         # now propagate the light through free space
         
-        return U1
+        return U2
     
     def fivef(self, phase_mask):
         Ta = torch.exp(1j * phase_mask) # amplitude transmittance (in our case the slm reflectance)
@@ -923,7 +1063,7 @@ class OpticsSimulation(nn.Module):
         
             # Propagate field and get intensity
             if asm:
-                output_field = self.angular_spectrum_propagation_padded(initial_field, z_px)
+                output_field = self.angular_spectrum_propagation(initial_field, z_px, pad = self.pad_4f)
                 intensity_at_z[i] = torch.real(output_field * torch.conj(output_field))
             else:
                 output_field = self.fresnel_propagation(initial_field, z_px)
@@ -942,7 +1082,7 @@ class OpticsSimulation(nn.Module):
             z_mm = z_px*self.px*1.0e3
             save_path = os.path.join(output_beam_sections_dir, f'intensity_{i:04d}_{z_mm:.2f}.tiff')
             #print(f'{i} {z_px}')
-            skimage.io.imsave(save_path, intensity_at_z[i])
+            skimage.io.imsave(save_path, intensity_at_z[i], check_contrast=False)
         
         def visualize_column_sums(P: np.ndarray, output_folder) -> np.ndarray:
             """
@@ -1043,7 +1183,10 @@ class OpticsSimulation(nn.Module):
             output_layer = self.fivef(phase_mask_upsampled)
                 
         elif self.lens_approach == '4f':
-            output_layer = self.fourf(phase_mask_upsampled)
+            output_layer = self.fourf(phase_mask_upsampled, self.pad_4f)
+            
+        elif self.lens_approach == '4f_plus':
+            output_layer = self.fourfplus(phase_mask_upsampled)
             
         elif self.lens_approach == 'lazy_4f':
             output_layer = self.lazy_fourf(phase_mask) 
@@ -1076,7 +1219,7 @@ class OpticsSimulation(nn.Module):
                     z = xyz[i, j, 2].type(torch.LongTensor)
 
                     x_ori = xyz[i, j, 0].type(torch.LongTensor)
-                    U1 = self.angular_spectrum_propagation_padded(output_layer, x) # angular spectrum propagation
+                    U1 = self.angular_spectrum_propagation(output_layer, x, pad = True, debug=False) # angular spectrum propagation
                     U1_intensity = torch.real(U1 * torch.conj(U1)) # intensity of the propagated field
                     #U1 = self.fresnel_propagation(output_layer, x) # fresnel propagation
                     # Here we assume that the beam is being dithered up and down

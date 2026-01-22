@@ -163,7 +163,7 @@ def validate_one_epoch(model, dataloader, criterion, tv_loss, mask_param, config
                     probs = torch.sigmoid(outputs)
                     oof_intensity = (probs * oof_mask).sum()
 
-                oof_weight = config.get('oof_loss_weight', 1.0)
+                oof_weight = config.get('oof_loss_weight', 0.0)
                 oof_loss = oof_weight * oof_intensity / outputs.numel()
 
             # Sum all losses
@@ -173,7 +173,8 @@ def validate_one_epoch(model, dataloader, criterion, tv_loss, mask_param, config
             
             # Optional: Print less frequently during validation
             if batch_idx % 10 == 0:
-                print(f"Val Epoch [{epoch+1}], Step [{batch_idx+1}], Loss: {loss.item():.4f}")
+                pass
+                #print(f"Val Epoch [{epoch+1}], Step [{batch_idx+1}], Loss: {loss.item():.4f}")
 
     avg_loss = total_loss / len(dataloader)
     print(f"==> Validation Epoch {epoch+1} Complete. Avg Loss: {avg_loss:.4f}")
@@ -297,7 +298,8 @@ def main():
         data_pair = train_ds[i] 
         val_samples.append(data_pair)
         xyz = data_pair[0].tolist()
-        labels_dict[i] = {'xyz': xyz}
+        target = data_pair[1].tolist()
+        labels_dict[i] = {'xyz': xyz, 'target':target}
          
     path_labels = os.path.join(training_results_dir,'labels.pickle')
     with open(path_labels, 'wb') as handle:
