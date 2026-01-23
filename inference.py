@@ -53,6 +53,7 @@ def inference_one_epoch(model, dataloader, mask_param, config):
             outputs = model(mask_param, bead_xyz_list)
             
             # visualize the outputs and targets
+            
 
 def main():
     """
@@ -103,7 +104,7 @@ def main():
         
     config["model_path"] = args.model_path
     learned_lens_approach = config['lens_approach']
-    
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # Load mask from tiff file (for both models)
     mask_path = os.path.join(args.input_dir, f"mask_phase_epoch_{args.epoch}.tiff")
     mask_np = skimage.io.imread(mask_path)
@@ -137,7 +138,7 @@ def main():
     else:
         pass
     cnn_model
-    cnn_model.load_state_dict(torch.load(args.model_path))
+    cnn_model.load_state_dict(torch.load(args.model_path, map_location="cpu"), strict=False)
     cnn_model.eval()
 
     

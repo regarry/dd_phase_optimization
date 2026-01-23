@@ -149,16 +149,3 @@ class OpticsDesignUnet(nn.Module):
         out = self.out(x)
         
         return out
-
-if __name__ == '__main__':
-    input_image = torch.rand((1, 3, 512, 512))
-    config = {'num_classes' : 1}
-    model = OpticsDesignUnet(config)
-    # Total parameters and trainable parameters.
-    total_params = sum(p.numel() for p in model.parameters())
-    print(f"{total_params:,} total parameters.")
-    total_trainable_params = sum(
-        p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"{total_trainable_params:,} training parameters.")
-    outputs = model(input_image)
-    print(outputs.shape)

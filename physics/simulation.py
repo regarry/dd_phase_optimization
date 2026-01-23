@@ -334,7 +334,7 @@ class OpticsSimulation(nn.Module):
         # to transer the physical size of the imaging volume
         self.image_volume_size_px = image_volume
 
-        self.up = nn.UpsamplingBilinear2d(scale_factor=2)
+        #self.up = nn.UpsamplingBilinear2d(scale_factor=2)
         x = list(range(-self.N // 2, self.N // 2))
         y = list(range(-self.N // 2, self.N // 2))
         [X, Y] = np.meshgrid(x, y)
@@ -1236,6 +1236,4 @@ class OpticsSimulation(nn.Module):
                         imgs3D[i, 0, l, x_ori - self.psf_keep_radius:x_ori + self.psf_keep_radius + 1, y - self.psf_keep_radius: y + self.psf_keep_radius + 1] += \
                             self.gpu_psfs[abs(z.item()-self.z_depth_list[l])] * intensity
 
-        noisy_imgs3D = self.noise(imgs3D)
-        final_imgs3D = noisy_imgs3D / self.camera_max_adu
-        return final_imgs3D
+        return imgs3D

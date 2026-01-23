@@ -8,10 +8,10 @@ from datetime import datetime
 # python RunProfilerInference.py
 if __name__ == "__main__":
     # Set your arguments here
-    training_folder = "./training_results/800_beads_phase_model_20251021-111735"
-    #training_folder = "./training_results/20260122-134227"
+    #training_folder = "./training_results/800_beads_phase_model_20251021-111735"
+    training_folder = "./training_results/20260122-160948"
     
-    epoch = 6
+    epoch = 61
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     inference_results = os.path.join(training_folder, timestamp)
     beam_profiles = inference_results
@@ -20,7 +20,7 @@ if __name__ == "__main__":
 
     # Run mask_inference.py
     inference_cmd = [
-        "python", "mask_inference.py",
+        "python", "inference.py",
         "--input_dir", training_folder,
         "--epoch", str(epoch),
         "--res_dir", inference_results,

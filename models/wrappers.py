@@ -38,8 +38,8 @@ class ParallelEndToEndModel(nn.Module):
         # The engine splits data, runs on GPU 0, 1, 2..., and sums result to GPU 0.
         sensor_image = self.physics(mask_param, emitters)
         
-        # --- Step 2: Reconstruction (Single GPU) ---
+        # --- Step 2: Bead Prediction (Single GPU) ---
         # The image is now on cuda:0. We pass it to the UNet.
-        reconstruction = self.unet(sensor_image)
+        bead_prediction = self.unet(sensor_image)
         
-        return reconstruction
+        return bead_prediction

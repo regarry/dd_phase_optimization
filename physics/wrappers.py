@@ -12,6 +12,7 @@ class MultiGpuSimulation(nn.Module):
         super().__init__()
         self.num_gpus = torch.cuda.device_count()
         self.replicas = nn.ModuleList()
+        self.camera_max_adu = torch.tensor(config['camera_max_adu'], dtype=torch.float64)
         
         # CASE A: Multi-GPU or Single-GPU
         if self.num_gpus > 0:
@@ -19,6 +20,15 @@ class MultiGpuSimulation(nn.Module):
             for i in range(self.num_gpus):
                 device = f'cuda:{i}'
                 sim = OpticsSimulation(config, device)
+                params = list(sim.named_parameters())
+                print(list(sim.named_parameters()))
+                if len(params) == 0:
+                    print("✅ No internal weights found. Your current manual loop is actually SAFE.")
+                    print("   (However, DDP is still usually faster/more efficient).")
+                else:
+                    print(f"⚠️ Found {len(params)} internal weights! You MUST use DDP.")
+                    for name, param in params:
+                        print(f"   - {name}: {param.shape}")
                 self.replicas.append(sim)
         # CASE B: CPU Only (Fallback)
         else:
@@ -55,8 +65,11 @@ class MultiGpuSimulation(nn.Module):
             outputs.append(chunk_output)
 
         # 3. Aggregate Results (All-Reduce to GPU 0)
-        final_image = outputs[0].to('cuda:0')
+        summed_image = outputs[0].to('cuda:0')
         for i in range(1, len(outputs)):
-            final_image = final_image + outputs[i].to('cuda:0')
-            
+            summed_image += outputs[i].to('cuda:0')
+        
+        # add noise and normalize
+        noisy_imgs3D = self.replicas[0].noise(summed_image)
+        final_image = noisy_imgs3D / self.camera_max_adu
         return final_image

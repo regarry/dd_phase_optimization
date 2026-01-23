@@ -1,18 +1,18 @@
 # ==========================================
 # 5. BEAD & SAMPLE GENERATION
 # ==========================================
-num_particles_range: [800, 801] # [min, max] emitters per image. Strong GPU: [450, 550]
+num_particles_range: [600, 601] # [min, max] emitters per image. Strong GPU: [450, 550]
 bead_radius: 1.0           # pixels 1.0 default
 
 # ==========================================
 # 1. OPTIMIZATION & TRAINING LOOP
 # ==========================================
 random_seed: 12345678
-ntrain: 960          # default 640, how many bead volumes per epoch
-nvalid: 128             # default 1000
+ntrain: 32 #960          # default 640, how many bead volumes per epoch
+nvalid: 32 #128             # default 1000
 batch_size: 1              # Training batch size
 accumulation_steps: 32     # Gradient accumulation steps to simulate larger batch sizes
-max_epochs: 100            # 200
+max_epochs: 1 #100            # 200
 initial_learning_rate: 1.0e-3
 gradient_checkpointing: False
 
@@ -82,11 +82,11 @@ max_intensity_conv: 8.0e+10 # convol: 5.0e+10, fresnel: 5e4
 max_intensity_fresnel: 5.0e+4
 
 # Beam Profiler Specifics
-z_min_mm: -0.25             # Min z-position for beam profile [mm]
-z_max_mm: 0.25              # Max z-position for beam profile [mm]
-y_min_mm: -0.050             # Min y-position for beam profile [mm]
-y_max_mm: 0.050              # Max y-position for beam profile [mm]
-num_z_steps: 100           # Simulation steps/planes across the z-range
+z_min_mm: -2.00             # Min z-position for beam profile [mm]
+z_max_mm: 2.00              # Max z-position for beam profile [mm]
+y_min_mm: -0.50             # Min y-position for beam profile [mm]
+y_max_mm: 0.50              # Max y-position for beam profile [mm]
+num_z_steps: 200           # Simulation steps/planes across the z-range
 
 # ==========================================
 # 7. CAMERA & NOISE MODEL
