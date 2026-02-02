@@ -678,10 +678,10 @@ class OpticsSimulation(nn.Module):
             print(f"Critical Limit: {z_crit*1e3:.4f} mm")
             print(f"Status: {status}")
             
-        if not is_safe:
-            print(f"  -> You are at {z_meters / z_crit * 100:.1f}% of the limit.")
-            print(f"  -> Suggestion: Use 'Band-Limited ASM' or switch to Fresnel propagation.")
-                
+            if not is_safe:
+                print(f"  -> You are at {z_meters / z_crit * 100:.1f}% of the limit.")
+                print(f"  -> Suggestion: Use 'Band-Limited ASM' or switch to Fresnel propagation.")
+                    
         return is_safe
         
     # def angular_spectrum_propagation_old(self, input_field, z, debug=False):

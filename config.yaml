@@ -8,11 +8,11 @@ bead_radius: 1.0           # pixels 1.0 default
 # 1. OPTIMIZATION & TRAINING LOOP
 # ==========================================
 random_seed: 12345678
-ntrain: 32 #960          # default 640, how many bead volumes per epoch
+ntrain: 320 #960          # default 640, how many bead volumes per epoch
 nvalid: 32 #128             # default 1000
 batch_size: 1              # Training batch size
 accumulation_steps: 32     # Gradient accumulation steps to simulate larger batch sizes
-max_epochs: 1 #100            # 200
+max_epochs: 100 #100            # 200
 initial_learning_rate: 1.0e-3
 gradient_checkpointing: False
 
