@@ -136,12 +136,12 @@ def validate_one_epoch(model, dataloader, criterion, tv_loss, mask_param, config
             # ---------------------------------------------------------
             # 2. FORWARD PASS
             # ---------------------------------------------------------
-            outputs = model(mask_param, bead_xyz_list)
+            logits = model(mask_param, bead_xyz_list)
             
             # ---------------------------------------------------------
             # 3. LOSS CALCULATION
             # ---------------------------------------------------------
-            criteria_loss = criterion(outputs, targets)
+            criteria_loss = criterion(logits, targets)
             
             # We include TV loss in validation so the number compares 1:1 with training loss
             total_variation_loss = tv_loss(mask_param)
@@ -157,14 +157,14 @@ def validate_one_epoch(model, dataloader, criterion, tv_loss, mask_param, config
                 oof_mask = 1.0 - bead_mask
                 
                 if config['num_classes'] > 1:
-                    probs = torch.softmax(outputs, dim=1)
+                    probs = torch.softmax(logits, dim=1)
                     oof_intensity = (probs[:, 1:, :, :] * oof_mask).sum()
                 else:
-                    probs = torch.sigmoid(outputs)
+                    probs = torch.sigmoid(logits)
                     oof_intensity = (probs * oof_mask).sum()
 
                 oof_weight = config.get('oof_loss_weight', 0.0)
-                oof_loss = oof_weight * oof_intensity / outputs.numel()
+                oof_loss = oof_weight * oof_intensity / logits.numel()
 
             # Sum all losses
             loss = criteria_loss + total_variation_loss + oof_loss

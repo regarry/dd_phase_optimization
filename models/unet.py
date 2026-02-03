@@ -11,13 +11,12 @@ def double_convolution_2d(in_channels, out_channels, dropout=0.0):
     """
     conv_layers = [
         nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
-        nn.Dropout2d(dropout) if dropout > 0 else nn.Identity(),
+        nn.InstanceNorm2d(out_channels, affine=True),
         nn.LeakyReLU(inplace=True),
-        nn.BatchNorm2d(out_channels),
         nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
-        nn.Dropout2d(dropout) if dropout > 0 else nn.Identity(),
+        nn.InstanceNorm2d(out_channels, affine=True),
         nn.LeakyReLU(inplace=True),
-        nn.BatchNorm2d(out_channels)
+        
     ]
     return nn.Sequential(*conv_layers)
 
@@ -31,11 +30,11 @@ def double_convolution_3d(in_channels, out_channels, dropout=0.0):
         nn.Conv3d(in_channels, out_channels, kernel_size=kernel_size, padding=padding),
         nn.Dropout3d(dropout) if dropout > 0 else nn.Identity(),
         nn.LeakyReLU(inplace=True),
-        nn.BatchNorm3d(out_channels),
+        nn.BatchNorm3d(out_channels, affine=True),
         nn.Conv3d(out_channels, out_channels, kernel_size=kernel_size, padding=padding),
         nn.Dropout3d(dropout) if dropout > 0 else nn.Identity(),
         nn.LeakyReLU(inplace=True),
-        nn.BatchNorm3d(out_channels)
+        nn.BatchNorm3d(out_channels, affine=True)
     ]
     return nn.Sequential(*conv_layers)
 
@@ -54,7 +53,10 @@ class OpticsDesignUnet(nn.Module):
         # --------------------------------------------------------
         if not self.conv3d:
             # Input: (Batch, Nimgs, H, W) -> Output: (Batch, Classes, H, W)
-            self.norm = nn.BatchNorm2d(num_features=self.Nimgs, affine=True)
+            # if self.Nimgs > 1:
+            #     self.norm = nn.BatchNorm2d(num_features=self.Nimgs, affine=True)
+            # elif self.Nimgs == 1:
+            #     self.norm = nn.InstanceNorm2d(num_features=1, affine=True)
             self.max_pool = nn.MaxPool2d(kernel_size=2, stride=2)
 
             # Contracting Path (Encoder)
@@ -86,7 +88,7 @@ class OpticsDesignUnet(nn.Module):
         # --------------------------------------------------------
         else:
             # Input: (Batch, 1, Depth, H, W) -> Output: (Batch, Classes, Depth, H, W)
-            self.norm = nn.BatchNorm3d(num_features=1, affine=True)
+            #self.norm = nn.BatchNorm3d(num_features=1, affine=True)
             self.max_pool = nn.MaxPool3d(kernel_size=(1, 2, 2), stride=2)
 
             # Contracting Path
@@ -123,7 +125,7 @@ class OpticsDesignUnet(nn.Module):
         """
         # 1. Normalization
         # We assume 'x' is already on the correct device (handled by Wrapper)
-        x = self.norm(x)
+        #x = self.norm(x)
 
         # 2. Encoder
         down_1 = self.down_convolution_1(x)

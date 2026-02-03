@@ -13,6 +13,8 @@ from torch.optim import Adam
 from torch.utils.data import DataLoader
 from datetime import datetime
 import skimage
+from skimage import io, img_as_ubyte
+import matplotlib.pyplot as plt
 
 # --- Local Imports ---
 from data.io import expand_config, load_config, makedirs, save_png, savePhaseMask
@@ -22,8 +24,10 @@ from data.preprocessing import generate_bead_templates
 from utils.debug import MemorySnapshot, print_all_gpu_stats
 from physics.masks import get_initial_phase_mask
 from physics.simulation import TotalVariationLoss
+from data.transforms import batch_xyz_to_boolean_grid
+from utils.metrics import compute_and_log_metrics
 
-def inference_one_epoch(model, dataloader, mask_param, config):
+def inference_one_epoch(model, dataloader, mask_param, config, out_dir):
     """
     Runs one epoch of validation.
     """
@@ -50,9 +54,31 @@ def inference_one_epoch(model, dataloader, mask_param, config):
             # ---------------------------------------------------------
             # 2. FORWARD PASS
             # ---------------------------------------------------------
-            outputs = model(mask_param, bead_xyz_list)
+            logits = model(mask_param, bead_xyz_list)
+            probs = torch.softmax(logits, dim=1)
+            cnn_img = torch.argmax(probs,dim=1)
+            
+            class_data = probs[0, :3, :, :].detach().cpu().numpy()
+            rgb_image = np.transpose(class_data, (1, 2, 0))
             
             # visualize the outputs and targets
+            #out_img = out_img.detach().cpu().squeeze().numpy()
+            out_path = os.path.join(out_dir, f"inference_{batch_idx}.png")
+            io.imsave(out_path, img_as_ubyte(rgb_image))
+            print(f"Saved inference for key {batch_idx} to {out_path}")
+            
+            # Save ground truth label from boolean grid
+        # wait check what targets is this is only the beads not the classes
+            gt_img = targets
+            if torch.is_tensor(gt_img):
+                gt_img = gt_img.detach().cpu().numpy()
+            if gt_img.dtype == np.bool_:
+                gt_img = (gt_img.astype(np.uint8)) * 255
+            gt_path = os.path.join(out_dir, f"ground_truth_{batch_idx}.png")
+            skimage.io.imsave(gt_path, img_as_ubyte(gt_img))
+            print(f"Saved ground truth for key {batch_idx} to {gt_path}")
+            compute_and_log_metrics(gt_img, cnn_img.cpu().numpy(), out_dir, f"batch_{batch_idx}", num_classes=3)
+            
             
 
 def main():
@@ -86,6 +112,13 @@ def main():
     config = load_config(os.path.join(args.input_dir, 'config.yaml'))
     config['inference_epoch'] = args.epoch
     
+    # Create output directory for inference results using current datetime.
+    dt_str = datetime.now().strftime("%Y%m%d-%H%M%S")
+    out_dir = os.path.join(args.res_dir, "inference", dt_str)
+    makedirs(out_dir)
+    
+    
+    
     # Automatically determine CNN model path if not provided
     if not args.model_path:
         # x is an integer that begins at 0 and increases by 1.
@@ -110,6 +143,12 @@ def main():
     mask_np = skimage.io.imread(mask_path)
     mask_tensor = torch.from_numpy(mask_np).type(torch.FloatTensor).to(device)
     mask_param = torch.nn.Parameter(mask_tensor, requires_grad=False)
+    
+    # Save updated configuration in out_dir, including inference epoch.
+    config_output_path = os.path.join(out_dir, "config.yaml")
+    with open(config_output_path, "w") as f:
+        for key, value in config.items():
+            f.write(f"{key}: {value}\n")
     
     # Load labels
     labels_path = os.path.join(args.input_dir, "labels.pickle")
@@ -142,7 +181,25 @@ def main():
     cnn_model.eval()
 
     
-    inference_one_epoch(cnn_model, val_loader, mask_param, config)
+    inference_one_epoch(cnn_model, val_loader, mask_param, config, out_dir)
+    
+    loss_file = os.path.join(args.input_dir, "train_losses.txt")
+    if not os.path.exists(loss_file):
+        print(f"train_losses.txt not found in {args.input_dir}")
+    else:
+        with open(loss_file, "r") as f:
+            losses = [float(line.strip()) for line in f if line.strip()]
+        plt.figure()
+        plt.plot(losses, label="Training Loss")
+        plt.xlabel("Epoch or Iteration")
+        plt.ylabel("Loss")
+        plt.title("Training Loss Over Time")
+        plt.yscale("log")
+        plt.legend()
+        save_path = os.path.join(out_dir, "train_loss.png")
+        plt.savefig(save_path)
+        print(f"Training loss plot saved to {save_path}")
+    
     
     
 if __name__ == "__main__":

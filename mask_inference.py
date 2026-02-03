@@ -11,7 +11,7 @@ from cnn_utils import OpticsDesignCNN
 from cnn_utils_unet import OpticsDesignUnet
 from physics_utils import PhysicalLayer  # physical model import
 #from beam_profile_gen import beam_profile_focus, beam_section, phase_mask_gen
-from metrics import compute_and_log_metrics, save_heatmap
+from dd_phase_optimization.utils.metrics import compute_and_log_metrics, save_heatmap
 import matplotlib.pyplot as plt
 
 def run_inference(model, mask_param, xyz, model_type = None):

@@ -1,7 +1,7 @@
 # ==========================================
 # 5. BEAD & SAMPLE GENERATION
 # ==========================================
-num_particles_range: [600, 601] # [min, max] emitters per image. Strong GPU: [450, 550]
+num_particles_range: [200, 201] # [min, max] emitters per image. Strong GPU: [450, 550]
 bead_radius: 1.0           # pixels 1.0 default
 
 # ==========================================
@@ -48,8 +48,8 @@ fresnel_lens_focal_length: 1.0e-3
 extra_prop_distance: 25.0e-3 # prop distance after 4f focal plane [m]
 
 # Optical Setup Configuration
-lens_approach: "4f"        # "fourier_lens" or "4f" or "lensless"
-lenless_prop_distance: 50.0e-3 # Propagation distance from SLM for lensless imaging [m]
+lens_approach: "lensless"        # "fourier_lens" or "4f" or "lensless"
+lenless_prop_distance: 20.0e-3 # Propagation distance from SLM for lensless imaging [m]
 angular_spectrum_method: True
 aperature: False           # Typo in original (aperture), keeping as is for code compatibility
 pad_4f: False                 # Whether to pad the field during 4f simulation to avoid aliasing
@@ -58,9 +58,9 @@ pad_4f: False                 # Whether to pad the field during 4f simulation to
 # 3. SLM & PHASE MASK
 # ==========================================
 slm_px: 9.2e-6             # Physical pixel size of the SLM [m]
-phase_mask_pixel_size: 1024 # Number of pixels on the SLM side (resolution)
+phase_mask_pixel_size: 32 # Number of pixels on the SLM side (resolution)
 initial_phase_mask: "empty"
-phase_mask_upsample_factor: 1 # Scale factor for phase mask upsampling (simulation vs physical)
+phase_mask_upsample_factor: 18 # Scale factor for phase mask upsampling (simulation vs physical)
 
 # ==========================================
 # 4. SIMULATION GRID & RESOLUTION
@@ -74,8 +74,8 @@ ratio_input_output_image_size: 1 # default with Unet 1, with ResNet 4
 # ==========================================
 # 6. ILLUMINATION & BEAM PROPERTIES
 # ==========================================
-bead_intensity: 20000       # arbitrary units
-illumination_scaling_factor: 1.0e-2
+bead_intensity: 5000.0       # arbitrary units
+illumination_scaling_factor: 7.0
 laser_beam_FWHC: 2.0e-3    # [m] FWHM of Gaussian beam
 bessel_cone_angle_degrees: 0.4
 max_intensity_conv: 8.0e+10 # convol: 5.0e+10, fresnel: 5e4
@@ -102,7 +102,7 @@ camera_max_adu: 65535      # 16-bit depth
 # ==========================================
 use_unet: true
 conv3d: False
-dropout: 0.5
+dropout: 0.0
 num_classes: 3             # 0=background, 1=bead, 2=between beads
 z_depth_list: [0]          # z slices input into the cnn
 z_coupled_ratio: 0.5
