@@ -96,15 +96,15 @@ def train_one_epoch(model, dataloader, optimizer, criterion, tv_loss, mask_param
         
         loss.backward()
         
-        if (batch_idx + 1) % grad_accum == 0:
+        if (batch_idx + 1) % grad_accum == 0 or batch_idx == (len(dataloader) - 1):
             optimizer.step()
             optimizer.zero_grad()
             
         total_loss += loss.item()
         
-        if batch_idx % 10 == 0:
-            pass
-            #print(f"Epoch [{epoch+1}], Step [{batch_idx+1}], Loss: {loss.item():.4f}")
+        # if batch_idx % 10 == 0:
+        #     pass
+        #     #print(f"Epoch [{epoch+1}], Step [{batch_idx+1}], Loss: {loss.item():.4f}")
             
     return total_loss / len(dataloader)
 
@@ -265,8 +265,7 @@ def main():
         optimizer, 
         mode='min', 
         factor=config['learning_rate_scheduler_factor'], 
-        patience=config['learning_rate_scheduler_patience'], 
-        verbose=True
+        patience=config['learning_rate_scheduler_patience']
     )
     
     early_stopper = EarlyStopping(
@@ -339,6 +338,6 @@ def main():
             if epoch % 5 == 0 or epoch == config['max_epochs'] - 1:
                 torch.save(model.state_dict(), os.path.join(training_results_dir, f'net_{epoch}.pt'))
     elapsed = time.time() - start_time
-    print(f"Training completed in {elapsed:.2f} seconds.")
+    print(f"Training completed in {elapsed/60/60:.2f} hours.")
 if __name__ == '__main__':
     main()

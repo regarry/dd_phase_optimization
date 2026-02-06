@@ -4,10 +4,11 @@ import os
 import numpy as np
 import imageio.v2 as imageio
 import skimage.filters
-import skimage.io
+#import skimage.io
 import scipy.special
 import scipy.io as sio
 from scipy.signal import fftconvolve
+#import tifffile
 
 def get_airy_psf_slice(r_grid, r_vec, z, wavelength, numerical_aperture, refractive_index):
     """
@@ -130,9 +131,11 @@ def generate_psf(config, results_dir):
         imageio.imwrite(os.path.join(psf_images_path, f"psf_z_{i:03d}.png"), psf_8bit)
 
     # Save 3D stack
-    psf_stack_path = os.path.join(results_dir, 'psf_z.mat')
+    psf_stack_path = os.path.join(results_dir, 'psf_stack.mat')
     sio.savemat(psf_stack_path, {'psf': psf_stack})
     print(f"PSF stack saved to {psf_stack_path}")
+    print("psf stack type", psf_stack.dtype )
+    print("psf stack max", np.max(psf_stack))
 
     return psf_stack
 
@@ -145,8 +148,8 @@ def generate_bead_defocus_stack(config, results_dir, setup_defocus_psf=None):
     bead_intensity = config['bead_intensity']
     
     # Output path
-    bead_defocus_img_path = os.path.join(results_dir, 'bead_defocus_imgs/')
-    os.makedirs(bead_defocus_img_path, exist_ok=True)
+    #bead_defocus_img_path = os.path.join(results_dir, 'bead_defocus_imgs/')
+    #os.makedirs(bead_defocus_img_path, exist_ok=True)
 
     # Load PSF if not provided
     if setup_defocus_psf is None:
@@ -177,8 +180,8 @@ def generate_bead_defocus_stack(config, results_dir, setup_defocus_psf=None):
         blurred_img = fftconvolve(bead_ori_img, setup_defocus_psf[i], mode='same')
         defocused_beads.append(blurred_img)
         # Save as 16-bit TIFF
-        fname = os.path.join(bead_defocus_img_path, f'z{i:02d}.tiff')
-        skimage.io.imsave(fname, blurred_img.astype('uint16'), check_contrast=False)
+        #fname = os.path.join(bead_defocus_img_path, f'z{i:02d}.tiff')
+        #tifffile.imwrite(fname, blurred_img)
         
     # Save slices
     defocused_beads_png_path = os.path.join(results_dir, 'bead_defocus_pngs/')
@@ -197,10 +200,10 @@ def generate_bead_defocus_stack(config, results_dir, setup_defocus_psf=None):
     
     
     
-    defocused_beads = np.array(defocused_beads)    
+    defocused_beads_np = np.array(defocused_beads)    
     print("Bead stack generation complete.")
     # Save 3D stack
     defocused_bead_stack_path = os.path.join(results_dir, 'defocused_beads.mat')
-    sio.savemat(defocused_bead_stack_path, {'defocus_beads': defocused_beads})
+    sio.savemat(defocused_bead_stack_path, {'defocus_beads': defocused_beads_np})
     print(f"Defocused bead stack saved to {defocused_bead_stack_path}")
-    return defocused_beads
+    return defocused_beads_np

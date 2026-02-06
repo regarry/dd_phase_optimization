@@ -6,6 +6,7 @@ import numpy as np
 import skimage.io
 import matplotlib.pyplot as plt
 import torch
+import tifffile
 
 def makedirs(path):
     if not os.path.exists(path):
@@ -222,7 +223,7 @@ def load_tiff_sequence(data_path):
     imgs = []
     for idx, fname in enumerate(tiff_files):
         img_path = os.path.join(data_path, fname)
-        img = skimage.io.imread(img_path)
+        img = tifffile.imread(img_path)
         imgs.append(img)
         print(f"Loaded [{idx}] {fname} with shape {img.shape}")
     print(f"Total images loaded: {len(imgs)}")

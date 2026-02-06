@@ -67,10 +67,12 @@ class MultiGpuSimulation(nn.Module):
             # Single CPU Replica
             summed_image = self.replicas[0](mask_param, xyz)
         # add noise and normalize
-        #print("imgs3d max before noise and norm: ", torch.max(summed_image))
+        
         noisy_imgs3D = self.replicas[0].noise(summed_image)
-        noisy_clamped_imgs3d = torch.clamp(noisy_imgs3D, min=0.0)
-        noisy_clamped_imgs3d = torch.clamp(noisy_clamped_imgs3d, max=self.camera_max_adu)
+        #noisy_clamped_imgs3d = torch.clamp(noisy_imgs3D, min=0.0)
+        #noisy_clamped_imgs3d = torch.clamp(noisy_clamped_imgs3d, max=self.camera_max_adu)
         final_image = noisy_imgs3D / self.camera_max_adu
-        #print("final_image max after noise and norm: ", torch.max(final_image))
+        if True:
+            print("imgs3d max before noise and norm: ", torch.max(summed_image))
+            print("final_image max after noise and norm: ", torch.max(final_image))
         return final_image

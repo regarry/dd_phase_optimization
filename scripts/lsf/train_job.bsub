@@ -2,6 +2,7 @@
 #BSUB -n 8
 #BSUB -W 96:00
 #BSUB -R "rusage[mem=64GB]"
+#BSUB -R "select[hname != 'gpu22']"
 #BSUB -q bme_gpu
 #BSUB -gpu "num=1:mode=exclusive_process:mps=no"
 #BSUB -J train_dd

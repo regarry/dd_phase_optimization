@@ -10,7 +10,8 @@ import skimage.io
 import matplotlib.pyplot as plt
 from datetime import datetime
 import os
-from data.io import load_tiff_sequence
+import scipy.io as sio
+#from data.io import load_tiff_sequence
 
 # nohup python mask_learning.py &> ./logs/01-31-25-09-38.txt &
 
@@ -166,6 +167,22 @@ class poisson_noise_approx(nn.Module):
         # result
         return input_poiss
 
+class RelativeNoise(nn.Module):
+    def __init__(self, noise_fraction=0.05):
+        super().__init__()
+        # noise_fraction 0.05 means 5% noise relative to signal
+        self.noise_fraction = noise_fraction
+
+    def forward(self, x):
+        # 1. Generate standard normal noise
+        noise = torch.randn_like(x)
+        
+        # 2. Scale noise by the signal itself and the fraction
+        # Use .abs() to ensure gradients don't flip and noise is valid
+        relative_noise = noise * (x.abs() * self.noise_fraction)
+        
+        return x + relative_noise
+
 
 class NoiseLayer(nn.Module):
     def __init__(self, config):
@@ -292,7 +309,7 @@ class OpticsSimulation(nn.Module):
         self.conv3d = config.get('conv3d', False)
         self.aperature = config.get('aperature', False)
         self.phase_mask_upsample_factor = config.get('phase_mask_upsample_factor', 1)  # scale factor for the phase mask upsampling
-        
+        self.debug_asm = config.get('debug_asm', False)
         self.scale_factor = config.get('scale_factor', 0.0)
         self.phase_mask_pixel_size = config['phase_mask_pixel_size']    
         self.N = config.get('N', self.phase_mask_upsample_factor * self.phase_mask_pixel_size)
@@ -319,6 +336,12 @@ class OpticsSimulation(nn.Module):
         [X, Y] = np.meshgrid(x, y)
         X = X * self.px
         Y = Y * self.px
+        
+        # x_slm = list(range(-self.N // 2, self.N // 2))
+        # y_slm = list(range(-self.N // 2, self.N // 2))
+        # [X_slm, Y_slm] = np.meshgrid(x, y)
+        # X = X * self.px
+        # Y = Y * self.px
         
         xx = list(range(-self.N + 1, self.N + 1))
         yy = list(range(-self.N + 1, self.N + 1))
@@ -395,8 +418,8 @@ class OpticsSimulation(nn.Module):
 
         # read bead defocus stack
         # Load all TIFF images sequentially 
-        bead_defocus_dir = os.path.join(training_results_dir, 'bead_defocus_imgs')
-        self.bead_defocus_imgs = load_tiff_sequence(bead_defocus_dir)
+        #bead_defocus_dir = os.path.join(training_results_dir, 'bead_defocus_imgs')
+        #self.bead_defocus_imgs = load_tiff_sequence(bead_defocus_dir)
         # tiff_files = sorted([f for f in os.listdir(data_path) if f.lower().endswith('.tiff')])
         # print(f"Found {len(tiff_files)} TIFF files in {data_path}:")
         # for idx, fname in enumerate(tiff_files):
@@ -420,7 +443,10 @@ class OpticsSimulation(nn.Module):
         self.noise = NoiseLayer(config)
         #self.norm01 = Normalize01()
         # Convert the list of images into a single 3D numpy array first
-        defocused_beads_arr = np.array(self.bead_defocus_imgs) 
+        defocused_bead_stack_path = os.path.join(training_results_dir, 'defocused_beads.mat')
+        # how to load the mat file made with sio.savemat(defocused_bead_stack_path, {'defocus_beads': defocused_beads_np})
+        defocused_beads_arr = sio.loadmat(defocused_bead_stack_path)['defocus_beads']
+        print(f"Defocused bead stack loaded from {defocused_bead_stack_path} with shape {defocused_beads_arr.shape} and max {defocused_beads_arr.max()}")
 
         
         #---- REGISTER BUFFERS ---
@@ -446,8 +472,8 @@ class OpticsSimulation(nn.Module):
         # 4. Register the PSF Image Library
         # This converts the list of images (self.imgs) into one 3D GPU tensor
         # Shape: [Num_PSFs, Height, Width]
-        psf_stack = np.array(self.bead_defocus_imgs).astype('float32')
-        self.register_buffer('gpu_psfs', torch.from_numpy(psf_stack))
+        #psf_stack = np.array(self.bead_defocus_imgs).astype('float32')
+        #self.register_buffer('gpu_psfs', torch.from_numpy(psf_stack))
 
         # 5. Register the Z-Depth List
         # This allows the forward loop to find PSF indices on the GPU
@@ -556,7 +582,7 @@ class OpticsSimulation(nn.Module):
         plt.tight_layout()
         plt.show(block=False)
         
-    def angular_spectrum_propagation(self, input_field, z, pad=False, debug=False):
+    def angular_spectrum_propagation(self, input_field, z, pad=False, debug=self.debug_asm):
         """
         ASM propagation.
         Args:
@@ -596,9 +622,9 @@ class OpticsSimulation(nn.Module):
         phase = 1j * self.k * gamma * prop_dist
         H = torch.exp(phase) #* mask
 
-        if debug:
-            # Visualization logic (using fftshift for human readability)
-            pass 
+        # if debug:
+        #     # Visualization logic (using fftshift for human readability)
+        #     pass 
 
         # 4. Apply Transfer Function & Inverse FFT
         U_prime = fft_field * H
@@ -865,18 +891,25 @@ class OpticsSimulation(nn.Module):
         Ta = torch.exp(1j * phase_mask) # amplitude transmittance (in our case the slm reflectance)
         Ta = Ta[None, None, :]
         Uo = self.incident_gaussian * Ta # light directly behind the SLM (or in our case reflected from the SLM)
-        output_layer = Uo
+        output_layer = self.angular_spectrum_propagation(Uo, self.lenless_prop_distance/self.px, pad=True) # infront of lens
+        return output_layer
+    
+    def sample_4f(self, phase_mask):
+        Ta = torch.exp(1j * phase_mask) # amplitude transmittance (in our case the slm reflectance)
+        Ta = Ta[None, None, :]
+        Uo = self.incident_gaussian * Ta # light directly behind the SLM (or in our case reflected from the SLM)
+        output_layer = self.angular_spectrum_propagation(Uo, self.lenless_prop_distance/self.px, pad=True) # infront of lens
         return output_layer
 
     def fourf(self, phase_mask, pad):
         Ta = torch.exp(1j * phase_mask).to(phase_mask.device) # amplitude transmittance (in our case the slm reflectance)
         Uo = self.incident_gaussian * Ta # light directly behind the SLM (or in our case reflected from the SLM)
-        Ul1 = self.angular_spectrum_propagation(Uo, self.focal_length_1/self.px,pad=pad, debug = False) # light directly infront of the lens
+        Ul1 = self.angular_spectrum_propagation(Uo, self.focal_length_1/self.px,pad=pad) # light directly infront of the lens
         Ul1_prime = Ul1 * self.B1 # light after the lens
-        Ul2 = self.angular_spectrum_propagation(Ul1_prime, (self.focal_length_1+self.focal_length_2)/self.px,pad=pad, debug = False) # light at the back focal plane of the lens
+        Ul2 = self.angular_spectrum_propagation(Ul1_prime, (self.focal_length_1+self.focal_length_2)/self.px,pad=pad) # light at the back focal plane of the lens
         #Ul2 = self.angular_spectrum_propagation(Uf1, self.focal_length_2) # light directly infront of the lens
         Ul2_prime = Ul2 * self.B2 # light after the 2nd lens
-        Uf2 = self.angular_spectrum_propagation(Ul2_prime, self.focal_length_2/self.px,pad = pad, debug = False) # light at the back focal plane of the lens
+        Uf2 = self.angular_spectrum_propagation(Ul2_prime, self.focal_length_2/self.px,pad = pad) # light at the back focal plane of the lens
         output_layer = Uf2[None, None, :, :] # light at the back focal plane of the lens
        
         return output_layer
@@ -884,12 +917,12 @@ class OpticsSimulation(nn.Module):
     def fourfplus(self, phase_mask):
         Ta = torch.exp(1j * phase_mask).to(phase_mask.device) # amplitude transmittance (in our case the slm reflectance)
         Uo = self.incident_gaussian * Ta # light directly behind the SLM (or in our case reflected from the SLM)
-        Ul1 = self.angular_spectrum_propagation(Uo, self.focal_length_1/self.px,pad=True, debug = False) # light directly infront of the lens
+        Ul1 = self.angular_spectrum_propagation(Uo, self.focal_length_1/self.px,pad=True) # light directly infront of the lens
         Ul1_prime = Ul1 * self.B1 # light after the lens
-        Ul2 = self.angular_spectrum_propagation(Ul1_prime, (self.focal_length_1+self.focal_length_2)/self.px,pad=True, debug = False) # light at the back focal plane of the lens
+        Ul2 = self.angular_spectrum_propagation(Ul1_prime, (self.focal_length_1+self.focal_length_2)/self.px,pad=True) # light at the back focal plane of the lens
         #Ul2 = self.angular_spectrum_propagation(Uf1, self.focal_length_2) # light directly infront of the lens
         Ul2_prime = Ul2 * self.B2 # light after the 2nd lens
-        Uf2 = self.angular_spectrum_propagation(Ul2_prime, (self.focal_length_2+self.extra_prop_distance)/self.px,pad = True, debug = False) # light at the back focal plane of the lens
+        Uf2 = self.angular_spectrum_propagation(Ul2_prime, (self.focal_length_2+self.extra_prop_distance)/self.px,pad = True) # light at the back focal plane of the lens
         output_layer = Uf2[None, None, :, :] # light at the back focal plane of the lens
        
         return output_layer
@@ -925,7 +958,7 @@ class OpticsSimulation(nn.Module):
         # The correction scales the field amplitude to conserve energy
         U1 = self.incident_gaussian * Ta * correction
         
-        U2 = self.angular_spectrum_propagation(U1, self.extra_prop_distance/self.px, pad=True, debug=False)
+        U2 = self.angular_spectrum_propagation(U1, self.extra_prop_distance/self.px, pad=True)
         
         # now propagate the light through free space
         
@@ -1052,6 +1085,7 @@ class OpticsSimulation(nn.Module):
             center_row_idx = intensity_at_z[i].shape[0] // 2
             center_col_idx = intensity_at_z[i].shape[1] // 2
             cross_section_profile[i,:] = intensity_at_z[i][ center_row_idx, center_col_idx + y_min_px : center_col_idx + y_max_px]
+            
         
         # normalize intensity_at_z to uint16
         #intensity_at_z = self.normalize_to_uint16(intensity_at_z[:])
@@ -1156,7 +1190,9 @@ class OpticsSimulation(nn.Module):
         elif self.lens_approach == 'lensless':
             output_layer = self.lensless(phase_mask_upsampled)
             # propagate to prop distance  pixels infront of lens
-            output_layer = self.angular_spectrum_propagation(output_layer, self.lenless_prop_distance/self.px, pad=True) # infront of lens
+        
+        elif self.lens_approach == 'sample_4f':
+            output_layer = self.sample_4f(phase_mask_upsampled)
             
         elif self.lens_approach == '5f':
             output_layer = self.fivef(phase_mask_upsampled)
@@ -1205,13 +1241,16 @@ class OpticsSimulation(nn.Module):
                     # change this to only dither 2*x centered where x is the max dither amount
                     # or the height of the FOV
                     ycenter_u1_intensity = U1_intensity.shape[2] // 2
-                    intensity = torch.sum(U1_intensity[0, 0, ycenter_u1_intensity - self.image_volume_size_px[1]:ycenter_u1_intensity + self.image_volume_size_px[1], int((self.N//2-1) + z)]) 
-                    #print("max intensity: ", torch.max(intensity))
-                    #print("max befocus bead: ", self.gpu_defocused_beads[abs(z.item()-self.z_depth_list[l])].max())
-                    #print("sum befocus bead: ", torch.sum(self.gpu_defocused_beads[abs(z.item()-self.z_depth_list[l])]))
-                    
+                    #intensity = torch.sum(U1_intensity[0, 0, ycenter_u1_intensity - self.image_volume_size_px[1]:ycenter_u1_intensity + self.image_volume_size_px[1], int((self.N//2-1) + z)]) 
+                    intensity = torch.sum(U1_intensity[0, 0, :, int((self.N//2-1) + z)]) 
+
                     photons = intensity * self.illumination_scaling_factor
-                    #print("photons: ", torch.max(photons))
+                    if False:
+                        print("photons: ", torch.max(photons))
+                        print("max intensity: ", torch.max(intensity))
+                        print("max defocus bead: ", self.gpu_defocused_beads[abs(z.item()-self.z_depth_list[l])].max())
+                        print("sum defocus bead: ", torch.sum(self.gpu_defocused_beads[abs(z.item()-self.z_depth_list[l])]))
+                        
                     if self.conv3d == False:
                         imgs3D[i, l, x_ori - self.psf_keep_radius:x_ori + self.psf_keep_radius  + 1, y - self.psf_keep_radius: y + self.psf_keep_radius + 1] += \
                             self.gpu_defocused_beads[abs(z.item()-self.z_depth_list[l])] * photons

@@ -79,6 +79,12 @@ def inference_one_epoch(model, dataloader, mask_param, config, out_dir):
             print(f"Saved ground truth for key {batch_idx} to {gt_path}")
             compute_and_log_metrics(gt_img, cnn_img.cpu().numpy(), out_dir, f"batch_{batch_idx}", num_classes=3)
             
+            # camera image
+            camera = model.physics(mask_param, bead_xyz_list)
+            camera_path = os.path.join(out_dir, f"camera_image_{batch_idx}.png")
+            camera_img = camera[0,0,:,:].detach().cpu().numpy()
+            skimage.io.imsave(camera_path, int(camera_img * config.get('camera_max_adu', 65535)))
+            print(f"Saved camera image for {batch_idx} to {camera_path}")
             
 
 def main():
@@ -110,6 +116,7 @@ def main():
     
     
     config = load_config(os.path.join(args.input_dir, 'config.yaml'))
+    config['px'] = float(config['px'])
     config['inference_epoch'] = args.epoch
     
     # Create output directory for inference results using current datetime.

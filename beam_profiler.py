@@ -145,6 +145,8 @@ def main():
             output_layer = phys_layer.ninef(mask_tensor)
         elif lens_approach == 'lazy_4f':
             output_layer = phys_layer.lazy_fourf(mask_tensor)
+        elif lens_approach == 'sample_4f':
+            output_layer = phys_layer.sample_4f(mask_tensor)
         else:
             raise ValueError('lens approach not supported')
 
