@@ -7,6 +7,7 @@ import skimage.io
 import matplotlib.pyplot as plt
 import torch
 import tifffile
+import imageio
 
 def makedirs(path):
     if not os.path.exists(path):
@@ -93,6 +94,34 @@ def save_png(image, output_dir, title, config):
     plt.tight_layout()
     plt.savefig(png_path)
     plt.close('all')
+
+
+def save_normalized_png(data_array, output_path):
+    """
+    Normalizes a 2D numpy array to 0-255 and saves it as a PNG.
+    
+    Args:
+        data_array (np.ndarray): The 2D array to save.
+        output_path (str): The full path (including filename) to save the image.
+    """
+    # Ensure directory exists
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    
+    # Calculate min and max for the specific slice
+    local_min = data_array.min()
+    local_max = data_array.max()
+
+    if local_max > local_min:
+        # Scale to 0-1 float based on the array's own range
+        normalized = (data_array - local_min) / (local_max - local_min)
+        # Convert to 0-255 uint8
+        img_8bit = (normalized * 255).astype(np.uint8)
+    else:
+        # Handle case where array is flat (all zeros or all same value)
+        img_8bit = np.zeros_like(data_array, dtype=np.uint8)
+
+    # Save the file
+    imageio.imwrite(output_path, img_8bit)
 
 def save_3d_volume_as_tiffs(volume, out_dir, base_name_prefix=""):
     """Save a 3D numpy array as a series of 2D tiff images."""

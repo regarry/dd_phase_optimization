@@ -12,13 +12,13 @@ def get_initial_phase_mask(config):
     Factory function to generate the initial phase mask based on config.
     Returns a float32 numpy array of shape (H, W).
     """
-    mode = config.get('initial_phase_mask', 'random')
+    mode = config.get('initial_phase_mask', 'empty')
     size = config['phase_mask_pixel_size']
     
     # 1. Physics-based initialization (Axicon)
     if mode == "axicon":
         # Ensure parameters exist
-        angle = config.get('bessel_cone_angle_degrees', 1.0)
+        angle = config.get('bessel_half_cone_angle_degrees', 1.0)
         px_m = config['px'] # config['px'] should already be in meters from main() correction
         wavelength_m = config['wavelength'] # already in meters
         
@@ -29,7 +29,17 @@ def get_initial_phase_mask(config):
             wavelength_m * 1e9, # bessel function expects nm
             angle
         )
-
+    elif mode == "lens":
+        print("Initializing with Lens Phase Mask...")
+        # Simple quadratic lens phase profile
+        x = np.linspace(-size//2, size//2 - 1, size) * config['px'] * 1e6 # in microns
+        y = np.linspace(-size//2, size//2 - 1, size) * config['px'] * 1e6 # in microns
+        X, Y = np.meshgrid(x, y)
+        focal_length_mm = config['lenless_prop_distance'] * 1e3 # Example focal length in mm
+        wavelength_nm = config['wavelength'] * 1e9 # in nm
+        k = 2 * np.pi / wavelength_nm # wavenumber in nm^-1
+        lens_phase = (k / (2 * focal_length_mm * 1e3)) * (X**2 + Y**2) # Quadratic phase
+        return lens_phase.astype(np.float32)
     # 2. Flat / Empty initialization
     elif mode == "empty":
         print("Initializing with Flat (Zero) mask...")

@@ -582,7 +582,7 @@ class OpticsSimulation(nn.Module):
         plt.tight_layout()
         plt.show(block=False)
         
-    def angular_spectrum_propagation(self, input_field, z, pad=False, debug=self.debug_asm):
+    def angular_spectrum_propagation(self, input_field, z, pad=False, debug=None):
         """
         ASM propagation.
         Args:
@@ -591,7 +591,8 @@ class OpticsSimulation(nn.Module):
         """
         # Handle dimensions
         *batch_dims, ny, nx = input_field.shape
-        
+        if debug is None:
+            debug = self.debug_asm
         if pad:
             # Pad to double size (2*N) to avoid circular convolution artifacts
             pad_x = nx // 2
@@ -854,18 +855,10 @@ class OpticsSimulation(nn.Module):
         #check if there are two singeltons in U1
         
         U1_cropped = U1[...,-self.N:, -self.N:]
-        U1_intensity = torch.real(U1_cropped * torch.conj(U1_cropped))
+        #U1_intensity = torch.real(U1_cropped * torch.conj(U1_cropped))
         
-        if debug:
-            plt.figure(figsize=(6, 5))
-            plt.title("U1 Intensity (Fresnel Propagation)")
-            plt.imshow(U1_intensity.cpu().detach().numpy(), cmap='viridis')
-            plt.colorbar()
-            plt.tight_layout()
-            plt.show(block=False)
-            breakpoint()  # Pause for debugging
 
-        return U1_intensity
+        return U1_cropped
     
     def against_lens(self, phase_mask):
         Ta = torch.exp(1j * phase_mask) # amplitude transmittance (in our case the slm reflectance)
@@ -898,7 +891,9 @@ class OpticsSimulation(nn.Module):
         Ta = torch.exp(1j * phase_mask) # amplitude transmittance (in our case the slm reflectance)
         Ta = Ta[None, None, :]
         Uo = self.incident_gaussian * Ta # light directly behind the SLM (or in our case reflected from the SLM)
-        output_layer = self.angular_spectrum_propagation(Uo, self.lenless_prop_distance/self.px, pad=True) # infront of lens
+        #output_layer = self.angular_spectrum_propagation(Uo, self.lenless_prop_distance/self.px, pad=True) # infront of lens
+        output_layer = self.fresnel_propagation(Uo, self.lenless_prop_distance/self.px) # infront of lens
+
         return output_layer
 
     def fourf(self, phase_mask, pad):
@@ -1240,7 +1235,7 @@ class OpticsSimulation(nn.Module):
                     # Here we assume that the beam is being dithered up and down
                     # change this to only dither 2*x centered where x is the max dither amount
                     # or the height of the FOV
-                    ycenter_u1_intensity = U1_intensity.shape[2] // 2
+                    #ycenter_u1_intensity = U1_intensity.shape[2] // 2
                     #intensity = torch.sum(U1_intensity[0, 0, ycenter_u1_intensity - self.image_volume_size_px[1]:ycenter_u1_intensity + self.image_volume_size_px[1], int((self.N//2-1) + z)]) 
                     intensity = torch.sum(U1_intensity[0, 0, :, int((self.N//2-1) + z)]) 
 

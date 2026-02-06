@@ -5,7 +5,7 @@ def generate_axicon_phase_mask(
     mask_resolution_pixels=(512, 512),
     pixel_pitch_um=10,  # Micrometers per pixel on the SLM
     wavelength_nm=632.8,  # Wavelength of light (e.g., HeNe laser)
-    bessel_cone_angle_degrees=1.0, # Desired cone angle of the Bessel beam in degrees
+    bessel_half_cone_angle_degrees=1.0, # Desired cone angle of the Bessel beam in degrees
 ):
     """
     Generates a 2D axicon phase mask for a phase SLM to produce a Bessel beam.
@@ -14,7 +14,7 @@ def generate_axicon_phase_mask(
         mask_resolution_pixels (tuple): (height, width) of the phase mask in pixels.
         pixel_pitch_um (float): The physical size of each pixel on the SLM in micrometers.
         wavelength_nm (float): The wavelength of the incident light in nanometers.
-        bessel_cone_angle_degrees (float): The desired cone angle of the Bessel beam
+        bessel_half_cone_angle_degrees (float): The desired cone half-angle of the Bessel beam
                                             in degrees. This directly relates to the
                                             slope of the axicon phase.
 
@@ -27,7 +27,7 @@ def generate_axicon_phase_mask(
     # Convert units to a consistent system (e.g., meters)
     pixel_pitch_m = pixel_pitch_um * 1e-6  # micrometers to meters
     wavelength_m = wavelength_nm * 1e-9  # nanometers to meters
-    bessel_cone_angle_rad = np.deg2rad(bessel_cone_angle_degrees) # degrees to radians
+    bessel_cone_angle_rad = np.deg2rad(bessel_half_cone_angle_degrees) # degrees to radians
 
     # Create a coordinate system for the mask
     # Centered at (0,0)
@@ -96,7 +96,7 @@ if __name__ == "__main__":
         mask_resolution_pixels=slm_resolution,
         pixel_pitch_um=slm_pixel_pitch_um,
         wavelength_nm=laser_wavelength_nm,
-        bessel_cone_angle_degrees=desired_bessel_cone_angle_deg
+        bessel_half_cone_angle_degrees=desired_bessel_cone_angle_deg
     )
 
     print(f"\nGenerated phase mask shape: {axicon_mask.shape}")

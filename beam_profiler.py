@@ -37,7 +37,7 @@ def main():
     px_um = px * 1e6 # px in um
     wavelength_nm = config['wavelength'] * 1e9 # wavelength in nm
     beam_fwhm = config['laser_beam_FWHC']
-    bessel_angle = config['bessel_cone_angle_degrees']
+    bessel_angle = config['bessel_half_cone_angle_degrees']
     #config['device'] = 'cuda' if torch.cuda.is_available() else 'cpu'
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     phase_mask_upsample_factor = config.get('phase_mask_upsample_factor', 1)

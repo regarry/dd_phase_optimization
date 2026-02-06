@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader
 from datetime import datetime
 
 # --- Local Imports ---
-from data.io import expand_config, load_config, makedirs, save_png, savePhaseMask
+from data.io import expand_config, load_config, makedirs, save_png, savePhaseMask, save_normalized_png
 from data.datasets import SyntheticMicroscopeData, ValidationDataset
 from models.wrappers import ParallelEndToEndModel
 from data.preprocessing import generate_bead_templates
@@ -252,6 +252,8 @@ def main():
     
     main_device = torch.device(config.get('cnn_device', 'cuda:0'))
     initial_mask = get_initial_phase_mask(config)
+    # save initial mask as a png scaled between 0-255
+    save_normalized_png(initial_mask, os.path.join(training_results_dir, 'initial_phase_mask.png'))
     mask_param = nn.Parameter(torch.from_numpy(initial_mask).float().to(main_device))
     
     optimizer = Adam(list(model.parameters()) + [mask_param], lr=config['initial_learning_rate'])

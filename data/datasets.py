@@ -25,7 +25,7 @@ class SyntheticMicroscopeData(Dataset):
         # Since __getitem__ handles a single sample, we add a fake batch dim.
         xyz_batch = bead_xyz_list[np.newaxis, ...] # Shape becomes (1, N, 3)
         
-        if self.config.get('num_classes', 1) > 1:
+        if self.config.get('num_classes', 1) == 3:
              # Handle 3-class case (Background, Bead, Connection)
              between_batch = between_bead_xyz_list[np.newaxis, ...] if between_bead_xyz_list is not None else None
              target = batch_xyz_to_3_class_grid(xyz_batch, between_batch, self.config)

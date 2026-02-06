@@ -172,7 +172,8 @@ def generate_bead_defocus_stack(config, results_dir, setup_defocus_psf=None):
     bead_ori_img[dist_sq_pixels <= bead_radius_px**2] = bead_intensity
     
     # Anti-aliasing (Gaussian smooth the edges of the perfect circle)
-    bead_ori_img = skimage.filters.gaussian(bead_ori_img, sigma=0.5)
+    if bead_radius_px > 0:
+        bead_ori_img = skimage.filters.gaussian(bead_ori_img, sigma=0.5)
 
     print(f"Convolving {len(setup_defocus_psf)} slices...")
     defocused_beads = []

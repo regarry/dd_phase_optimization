@@ -82,8 +82,8 @@ def inference_one_epoch(model, dataloader, mask_param, config, out_dir):
             # camera image
             camera = model.physics(mask_param, bead_xyz_list)
             camera_path = os.path.join(out_dir, f"camera_image_{batch_idx}.png")
-            camera_img = camera[0,0,:,:].detach().cpu().numpy()
-            skimage.io.imsave(camera_path, int(camera_img * config.get('camera_max_adu', 65535)))
+            camera_img = (camera.squeeze().detach().cpu().numpy() * config.get('camera_max_adu', 65535)).astype(np.uint16)
+            skimage.io.imsave(camera_path, camera_img)
             print(f"Saved camera image for {batch_idx} to {camera_path}")
             
 
@@ -124,7 +124,23 @@ def main():
     out_dir = os.path.join(args.res_dir, "inference", dt_str)
     makedirs(out_dir)
     
-    
+    if args.plot_train_loss:
+        loss_file = os.path.join(args.input_dir, "train_losses.txt")
+        if not os.path.exists(loss_file):
+            print(f"train_losses.txt not found in {args.input_dir}")
+        else:
+            with open(loss_file, "r") as f:
+                losses = [float(line.strip()) for line in f if line.strip()]
+            plt.figure()
+            plt.plot(losses, label="Training Loss")
+            plt.xlabel("Epoch or Iteration")
+            plt.ylabel("Loss")
+            plt.title("Training Loss Over Time")
+            plt.yscale("log")
+            plt.legend()
+            save_path = os.path.join(out_dir, "train_loss.png")
+            plt.savefig(save_path)
+            print(f"Training loss plot saved to {save_path}")
     
     # Automatically determine CNN model path if not provided
     if not args.model_path:
