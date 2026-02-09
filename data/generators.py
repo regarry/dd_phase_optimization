@@ -80,7 +80,6 @@ def create_random_emitters(config):
     # Between: (M, 3) or None
     beads_np = np.array(beads)
     
-    between_np = None
     if len(between_beads) > 0:
         between_np = np.array(between_beads)
         

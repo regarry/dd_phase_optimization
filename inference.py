@@ -68,14 +68,19 @@ def inference_one_epoch(model, dataloader, mask_param, config, out_dir):
             print(f"Saved inference for key {batch_idx} to {out_path}")
             
             # Save ground truth label from boolean grid
-        # wait check what targets is this is only the beads not the classes
             gt_img = targets
             if torch.is_tensor(gt_img):
                 gt_img = gt_img.detach().cpu().numpy()
             if gt_img.dtype == np.bool_:
                 gt_img = (gt_img.astype(np.uint8)) * 255
+            palette = np.array([
+                [255,   0,   0], # 0: Bright Red
+                [  0, 255,   0], # 1: Bright Green
+                [  0,   0, 255]  # 2: Bright Blue
+            ], dtype=np.uint8)
+            rgb_gt_image = palette[gt_img]
             gt_path = os.path.join(out_dir, f"ground_truth_{batch_idx}.png")
-            skimage.io.imsave(gt_path, img_as_ubyte(gt_img))
+            skimage.io.imsave(gt_path, rgb_gt_image)
             print(f"Saved ground truth for key {batch_idx} to {gt_path}")
             compute_and_log_metrics(gt_img, cnn_img.cpu().numpy(), out_dir, f"batch_{batch_idx}", num_classes=3)
             

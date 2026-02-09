@@ -13,6 +13,7 @@ import torch.optim as optim
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 from datetime import datetime
+import torch.nn.functional as F
 
 # --- Local Imports ---
 from data.io import expand_config, load_config, makedirs, save_png, savePhaseMask, save_normalized_png
@@ -23,7 +24,7 @@ from utils.debug import MemorySnapshot, print_all_gpu_stats
 from physics.masks import get_initial_phase_mask
 from physics.simulation import TotalVariationLoss
 
-def train_one_epoch(model, dataloader, optimizer, criterion, tv_loss, mask_param, config, epoch):
+def train_one_epoch(model, dataloader, optimizer, criterion_ce, criterion_dice, tv_loss, mask_param, config, epoch):
     """
     Runs one epoch of training.
     model: The ParallelEndToEndModel (Wrapper on CPU)
@@ -63,7 +64,8 @@ def train_one_epoch(model, dataloader, optimizer, criterion, tv_loss, mask_param
         # ---------------------------------------------------------
         # 3. LOSS & OPTIMIZATION
         # ---------------------------------------------------------
-        criteria_loss = criterion(outputs, targets)
+        criterion_ce_loss = criterion_ce(outputs, targets)
+        criterion_dice_loss = criterion_dice(outputs, targets)
         total_variation_loss = tv_loss(mask_param)
         oof_loss = 0.0
         if config.get('oof_loss_weight', 0.0) > 0.0:
@@ -92,7 +94,7 @@ def train_one_epoch(model, dataloader, optimizer, criterion, tv_loss, mask_param
             oof_weight = config.get('oof_loss_weight', 1.0)
             oof_loss = oof_weight * oof_intensity / outputs.numel()
 
-        loss = criteria_loss + total_variation_loss + oof_loss
+        loss = criterion_ce_loss + total_variation_loss + oof_loss + criterion_dice_loss
         
         loss.backward()
         
@@ -108,7 +110,7 @@ def train_one_epoch(model, dataloader, optimizer, criterion, tv_loss, mask_param
             
     return total_loss / len(dataloader)
 
-def validate_one_epoch(model, dataloader, criterion, tv_loss, mask_param, config, epoch):
+def validate_one_epoch(model, dataloader, criterion_ce, criterion_dice, tv_loss, mask_param, config, epoch):
     """
     Runs one epoch of validation.
     """
@@ -141,7 +143,8 @@ def validate_one_epoch(model, dataloader, criterion, tv_loss, mask_param, config
             # ---------------------------------------------------------
             # 3. LOSS CALCULATION
             # ---------------------------------------------------------
-            criteria_loss = criterion(logits, targets)
+            criterion_ce_loss = criterion_ce(logits, targets)
+            criterion_dice_loss = criterion_dice(logits, targets)
             
             # We include TV loss in validation so the number compares 1:1 with training loss
             total_variation_loss = tv_loss(mask_param)
@@ -167,7 +170,7 @@ def validate_one_epoch(model, dataloader, criterion, tv_loss, mask_param, config
                 oof_loss = oof_weight * oof_intensity / logits.numel()
 
             # Sum all losses
-            loss = criteria_loss + total_variation_loss + oof_loss
+            loss = criterion_ce_loss + criterion_dice_loss + total_variation_loss + oof_loss
             
             total_loss += loss.item()
             
@@ -213,6 +216,64 @@ class EarlyStopping:
             self.best_loss = val_loss
             #self.save_checkpoint(val_loss, model)
             self.counter = 0
+class BinaryDiceLoss(nn.Module):
+    def __init__(self, smooth=1e-6):
+        super(BinaryDiceLoss, self).__init__()
+        self.smooth = smooth
+
+    def forward(self, logits, targets):
+        """
+        logits: [Batch, 1, H, W] (Raw scores from model)
+        targets: [Batch, H, W] or [Batch, 1, H, W] (0 or 1)
+        """
+        # 1. Apply Sigmoid (Not Softmax!)
+        probs = torch.sigmoid(logits)
+        
+        # 2. Flatten targets to match probs
+        targets = targets.view_as(probs).float()
+        
+        # 3. Calculate Intersection (Element-wise multiplication)
+        #    Sum over spatial dims (Batch, Channel, H, W) -> Sum over (2,3)
+        dims = (2, 3) 
+        if probs.dim() == 5: dims = (2, 3, 4) # Handle 3D volumes
+            
+        intersection = (probs * targets).sum(dim=dims)
+        cardinality = (probs + targets).sum(dim=dims)
+        
+        # 4. Dice Score
+        dice_score = (2. * intersection + self.smooth) / (cardinality + self.smooth)
+        
+        return 1.0 - dice_score.mean()
+    
+class MultiClassDiceLoss(nn.Module):
+    def __init__(self, smooth=1e-6):
+        super(MultiClassDiceLoss, self).__init__()
+        self.smooth = smooth
+
+    def forward(self, logits, targets):
+        """
+        logits: [Batch, Classes, D, H, W] (Raw scores, BEFORE softmax)
+        targets: [Batch, D, H, W] (Integer class indices 0, 1, 2...)
+        """
+        # 1. Apply Softmax to get probabilities
+        probs = F.softmax(logits, dim=1)
+        
+        # 2. One-Hot Encode the targets to match probs shape
+        #    Output: [Batch, Classes, D, H, W]
+        targets_one_hot = F.one_hot(targets, num_classes=logits.shape[1])
+        targets_one_hot = targets_one_hot.permute(0, 3, 1, 2).float()
+        
+        # 3. Calculate Intersection and Union (per class, per batch)
+        #    Sum over spatial dimensions (D, H, W) -> (Batch, Classes)
+        dims = (2, 3) 
+        intersection = torch.sum(probs * targets_one_hot, dim=dims)
+        cardinality = torch.sum(probs + targets_one_hot, dim=dims)
+        
+        # 4. Calculate Dice Score
+        dice_score = (2. * intersection + self.smooth) / (cardinality + self.smooth)
+        
+        # 5. Loss is 1 - Dice (Averaged over classes and batch)
+        return 1.0 - dice_score.mean()
 
 def main():
     start_time = time.time()
@@ -276,11 +337,17 @@ def main():
     )
     
     # Loss setup
-    if config['num_classes'] > 1:
+    if config['num_classes'] == 3:
         weights = torch.tensor(config.get('weights', [1,1,1])).float().to(main_device)
-        criterion = nn.CrossEntropyLoss(weight=weights)
+        criterion_ce = nn.CrossEntropyLoss(weight=weights)
+        print("Using MultiClassDiceLoss for 3-class segmentation.")
+        criterion_dice = MultiClassDiceLoss()
+    elif config['num_classes'] == 1:
+        criterion_ce = nn.BCEWithLogitsLoss()
+        print("Using standard Dice Loss for binary segmentation.")
+        criterion_dice = BinaryDiceLoss()  
     else:
-        criterion = nn.BCEWithLogitsLoss()
+        raise ValueError("Unsupported number of classes. Only 1 (binary) or 3 (multi-class) are supported.")
     
     tv_loss = TotalVariationLoss(weight=config.get('tv_loss_weight', 0.0))
 
@@ -314,10 +381,10 @@ def main():
     train_losses = []
     with MemorySnapshot(os.path.join(training_results_dir, "crash_snapshot.pickle")) as snapshot:
         for epoch in range(config['max_epochs']):
-            loss = train_one_epoch(model, train_loader, optimizer, criterion, 
+            loss = train_one_epoch(model, train_loader, optimizer, criterion_ce, criterion_dice, 
                                    tv_loss, mask_param, config, epoch)
             train_losses.append(loss)
-            val_loss = validate_one_epoch(model, val_loader, criterion, tv_loss, mask_param, config, epoch)
+            val_loss = validate_one_epoch(model, val_loader, criterion_ce, criterion_dice, tv_loss, mask_param, config, epoch)
             scheduler.step(val_loss)
             early_stopper(val_loss)
             current_lr = optimizer.param_groups[0]['lr']

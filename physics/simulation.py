@@ -182,12 +182,10 @@ class RelativeNoise(nn.Module):
         relative_noise = noise * (x.abs() * self.noise_fraction)
         
         return x + relative_noise
-
-
 class NoiseLayer(nn.Module):
     def __init__(self, config):
         super().__init__()
-        # Use float32 for parameters to match the rest of the pipeline
+        # Fixed Camera Params
         self.quantum_efficiency = torch.tensor(config['quantum_efficiency'], dtype=torch.float32)
         self.dark_current_mean = torch.tensor(config['dark_current_mean'], dtype=torch.float32)
         self.read_noise_std = torch.tensor(config['read_noise_std'], dtype=torch.float32)
@@ -195,51 +193,105 @@ class NoiseLayer(nn.Module):
         self.camera_max_adu = torch.tensor(config['camera_max_adu'], dtype=torch.float32)
 
     def forward(self, ideal_image_volume):
-        """
-        Args:
-            ideal_image_volume (Tensor): Shape [Batch, 1, H, W] or [Batch, D, H, W].
-                                         Can be float32 or float64.
-        """
-        # 0. Setup: Move scalar params to the correct device
         device = ideal_image_volume.device
-        
-        # CAST TO FLOAT32 IMMEDIATELY
-        # This saves memory and ensures fast GPU operations
         img = ideal_image_volume.to(device=device, dtype=torch.float32)
         
-        qe = self.quantum_efficiency.to(device)
-        dark_mean = self.dark_current_mean.to(device)
-        read_std = self.read_noise_std.to(device)
-        gain = self.camera_gain.to(device)
-        max_adu = self.camera_max_adu.to(device)
-
-        # 1. Total Mean Electrons (Signal + Dark)
-        # Physics: Flux adds up linearly
-        mean_signal = img * qe
-        mean_total = mean_signal + dark_mean
+        # --- ROBUST AUTO-EXPOSURE ---
+        # Instead of a learnable parameter, we dynamically normalize.
+        # 1. Find the 99.9th percentile (robust max) to ignore single hot pixels
+        #    (For sparse beads, max() is okay, but percentile is safer against outliers)
+        batch_flat = img.view(img.size(0), -1)
+        robust_max = torch.quantile(batch_flat, 0.999, dim=1)
         
-        # Safety clamp for sqrt
-        mean_total = torch.clamp_min(mean_total, 0.0)
-
-        # 2. Shot Noise (Poisson approx via Gaussian)
-        # Variance = Mean, so Std = sqrt(Mean)
-        shot_std = torch.sqrt(mean_total)
+        # 2. Calculate target peak electrons based on camera capacity
+        #    We aim for 90% of full well capacity to stay safe from saturation
+        #    Full Well (in e-) = Max ADU / Gain
+        full_well_electrons = self.camera_max_adu.to(device) / self.camera_gain.to(device)
+        target_peak_electrons = full_well_electrons * 0.90
         
-        # Generate noise (float32 is plenty random enough)
-        epsilon_shot = torch.randn_like(mean_total)
+        # 3. Calculate the Scaling Factor (Exposure Time) needed for this specific batch
+        #    Add epsilon to avoid div by zero
+        scaling_factor = target_peak_electrons / (robust_max + 1e-6)
         
-        # Electrons with shot noise
-        electrons_shot = mean_total + (shot_std * epsilon_shot)
-
-        # 3. Read Noise (Gaussian)
-        epsilon_read = torch.randn_like(electrons_shot)
-        electrons_total = electrons_shot + (read_std * epsilon_read)
-
-        # 4. Conversion to ADU & Clipping
-        raw_adu = electrons_total * gain
-        final_adu = torch.clamp(raw_adu, min=0.0, max=max_adu)
-
+        # 4. Broadcast scale to shape [Batch, 1, 1, 1] for multiplication
+        scaling_factor = scaling_factor.view(-1, 1, 1, 1)
+        
+        # Apply Scale
+        img_scaled = img * scaling_factor
+        
+        # --- Continue with Physics ---
+        mean_signal = img_scaled * self.quantum_efficiency.to(device)
+        mean_total = torch.clamp_min(mean_signal + self.dark_current_mean.to(device), 0.0)
+        
+        # Shot Noise
+        shot_std = torch.sqrt(mean_total + 1e-6)
+        electrons_shot = mean_total + (shot_std * torch.randn_like(mean_total))
+        
+        # Read Noise & ADU
+        electrons_total = electrons_shot + (self.read_noise_std.to(device) * torch.randn_like(electrons_shot))
+        raw_adu = electrons_total * self.camera_gain.to(device)
+        
+        # Hard Clamp is now safe because we mathematically ensured we are within range
+        final_adu = torch.clamp(raw_adu, min=0.0, max=self.camera_max_adu.to(device))
+        
         return final_adu
+
+# class NoiseLayer(nn.Module):
+#     def __init__(self, config):
+#         super().__init__()
+#         # Use float32 for parameters to match the rest of the pipeline
+#         self.quantum_efficiency = torch.tensor(config['quantum_efficiency'], dtype=torch.float32)
+#         self.dark_current_mean = torch.tensor(config['dark_current_mean'], dtype=torch.float32)
+#         self.read_noise_std = torch.tensor(config['read_noise_std'], dtype=torch.float32)
+#         self.camera_gain = torch.tensor(config['camera_gain'], dtype=torch.float32)
+#         self.camera_max_adu = torch.tensor(config['camera_max_adu'], dtype=torch.float32)
+
+#     def forward(self, ideal_image_volume):
+#         """
+#         Args:
+#             ideal_image_volume (Tensor): Shape [Batch, 1, H, W] or [Batch, D, H, W].
+#                                          Can be float32 or float64.
+#         """
+#         # 0. Setup: Move scalar params to the correct device
+#         device = ideal_image_volume.device
+        
+#         # CAST TO FLOAT32 IMMEDIATELY
+#         # This saves memory and ensures fast GPU operations
+#         img = ideal_image_volume.to(device=device, dtype=torch.float32)
+        
+#         qe = self.quantum_efficiency.to(device)
+#         dark_mean = self.dark_current_mean.to(device)
+#         read_std = self.read_noise_std.to(device)
+#         gain = self.camera_gain.to(device)
+#         max_adu = self.camera_max_adu.to(device)
+
+#         # 1. Total Mean Electrons (Signal + Dark)
+#         # Physics: Flux adds up linearly
+#         mean_signal = img * qe
+#         mean_total = mean_signal + dark_mean
+        
+#         # Safety clamp for sqrt
+#         mean_total = torch.clamp_min(mean_total, 0.0)
+
+#         # 2. Shot Noise (Poisson approx via Gaussian)
+#         # Variance = Mean, so Std = sqrt(Mean)
+#         shot_std = torch.sqrt(mean_total)
+        
+#         # Generate noise (float32 is plenty random enough)
+#         epsilon_shot = torch.randn_like(mean_total)
+        
+#         # Electrons with shot noise
+#         electrons_shot = mean_total + (shot_std * epsilon_shot)
+
+#         # 3. Read Noise (Gaussian)
+#         epsilon_read = torch.randn_like(electrons_shot)
+#         electrons_total = electrons_shot + (read_std * epsilon_read)
+
+#         # 4. Conversion to ADU & Clipping
+#         raw_adu = electrons_total * gain
+#         final_adu = torch.clamp(raw_adu, min=0.0, max=max_adu)
+
+#         return final_adu
 # class Normalize01(nn.Module):
 #     def __init__(self):
 #         super().__init__()
@@ -300,11 +352,13 @@ class OpticsSimulation(nn.Module):
         self.focal_length_3 = config['focal_length_3']  # for 9f approach
         self.focal_length_4 = config['focal_length_4']  # for 9f approach
         self.focal_length_5 = config['focal_length_5']  # for 9f approach
-        self.illumination_scaling_factor = config.get('illumination_scaling_factor')  # scaling factor for the illumination
+        self.illumination_scaling_factor = torch.tensor(
+            float(config.get('illumination_scaling_factor')), 
+            dtype=torch.float32
+                                                        )# scaling factor for the illumination
         camera_max_adu = config.get('camera_max_adu')  # maximum ADU for the camera
         self.lenless_prop_distance = config.get('lenless_prop_distance', 1.0e-3)  # distance for lensless propagation
         self.extra_prop_distance = config.get('extra_prop_distance', 0.0)  # extra distance for propagation    
-        #self.pad = 500
         self.datetime = datetime.now().strftime("%Y%m%d-%H%M%S")
         self.conv3d = config.get('conv3d', False)
         self.aperature = config.get('aperature', False)
@@ -455,7 +509,7 @@ class OpticsSimulation(nn.Module):
         self.register_buffer('incident_gaussian', incident_gaussian)
         
         self.register_buffer('gpu_defocused_beads', torch.from_numpy(defocused_beads_arr).float())
-        
+        #self.register_buffer('illumination_scaling_factor', torch.tensor(self.illumination_scaling_factor).float())
         self.register_buffer('B1', B1)
         self.register_buffer('B2', B2)
         self.register_buffer('B3', B3)
@@ -895,6 +949,8 @@ class OpticsSimulation(nn.Module):
         output_layer = self.fresnel_propagation(Uo, self.lenless_prop_distance/self.px) # infront of lens
 
         return output_layer
+
+    
 
     def fourf(self, phase_mask, pad):
         Ta = torch.exp(1j * phase_mask).to(phase_mask.device) # amplitude transmittance (in our case the slm reflectance)

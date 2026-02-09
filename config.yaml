@@ -2,12 +2,15 @@
 # 5. BEAD & SAMPLE GENERATION
 # ==========================================
 num_particles_range: [450, 550] # [min, max] emitters per image. Strong GPU: [450, 550]
-bead_radius: 0           # pixels 1.0 default
+bead_radius: 1           # pixels 1.0 default
+z_coupled_ratio: 0.5
+z_coupled_spacing_range: [1, 5] # need to change the code so that the z coupled beads are only generated around the in focus plane
+
 
 # ==========================================
 # 1. OPTIMIZATION & TRAINING LOOP
 # ==========================================
-random_seed: 123456
+random_seed: 12345
 ntrain: 1 #960          # default 640, how many bead volumes per epoch
 nvalid: 1 #128             # default 1000
 batch_size: 1              # Training batch size
@@ -58,7 +61,7 @@ pad_4f: False                 # Whether to pad the field during 4f simulation to
 # ==========================================
 # 3. SLM & PHASE MASK
 # ==========================================
-slm_px: 0.1625e-6             # Physical pixel size of the SLM [m]
+slm_px: 2.3e-6 # 0.1625e-6             # Physical pixel size of the SLM [m]
 phase_mask_pixel_size: 1024 # Number of pixels on the SLM side (resolution)
 initial_phase_mask: "empty"
 bessel_half_cone_angle_degrees: 1.6
@@ -77,8 +80,8 @@ ratio_input_output_image_size: 1 # default with Unet 1, with ResNet 4
 # 6. ILLUMINATION & BEAM PROPERTIES
 # ==========================================
 bead_intensity: 1.0       # arbitrary units
-illumination_scaling_factor: 0.00125
-laser_beam_FWHC: 0.072e-3    # [m] FWHM of Gaussian beam
+illumination_scaling_factor: 1.0
+laser_beam_FWHC: 1.0e-3 #0.072e-3    # [m] FWHM of Gaussian beam
 max_intensity_conv: 8.0e+10 # convol: 5.0e+10, fresnel: 5e4
 max_intensity_fresnel: 5.0e+4
 
@@ -106,8 +109,6 @@ conv3d: False
 dropout: 0.0
 num_classes: 3             # 0=background, 1=bead, 2=between beads
 z_depth_list: [0]          # z slices input into the cnn
-z_coupled_ratio: 0.5
-z_coupled_spacing_range: [2, 5] # need to change the code so that the z coupled beads are only generated around the in focus plane
 
 # ==========================================
 # 9. PATHS & FILES

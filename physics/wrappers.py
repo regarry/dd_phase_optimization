@@ -13,7 +13,7 @@ class MultiGpuSimulation(nn.Module):
         self.num_gpus = torch.cuda.device_count()
         self.replicas = nn.ModuleList()
         self.camera_max_adu = torch.tensor(config['camera_max_adu'], dtype=torch.float32)
-        
+        self.debug = True
         # CASE A: Multi-GPU or Single-GPU
         if self.num_gpus > 0:
             print(f"⚡ Initializing Physics Engine across {self.num_gpus} GPUs...")
@@ -69,10 +69,10 @@ class MultiGpuSimulation(nn.Module):
         # add noise and normalize
         
         noisy_imgs3D = self.replicas[0].noise(summed_image)
-        #noisy_clamped_imgs3d = torch.clamp(noisy_imgs3D, min=0.0)
-        #noisy_clamped_imgs3d = torch.clamp(noisy_clamped_imgs3d, max=self.camera_max_adu)
         final_image = noisy_imgs3D / self.camera_max_adu
-        if True:
+        
+        if self.debug:
+            self.debug = False  # Only print once
             print("imgs3d max before noise and norm: ", torch.max(summed_image))
             print("final_image max after noise and norm: ", torch.max(final_image))
         return final_image

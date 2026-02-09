@@ -9,7 +9,7 @@ from datetime import datetime
 if __name__ == "__main__":
     # Set your arguments here
     #training_folder = "./training_results/800_beads_phase_model_20251021-111735"
-    training_folder = "./training_results/20260206-124935"
+    training_folder = "./training_results/20260209-142946"
     
     epoch = 0
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
