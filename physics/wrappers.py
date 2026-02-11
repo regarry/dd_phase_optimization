@@ -13,7 +13,7 @@ class MultiGpuSimulation(nn.Module):
         self.num_gpus = torch.cuda.device_count()
         self.replicas = nn.ModuleList()
         self.camera_max_adu = torch.tensor(config['camera_max_adu'], dtype=torch.float32)
-        self.debug = True
+        self.debug = False
         # CASE A: Multi-GPU or Single-GPU
         if self.num_gpus > 0:
             print(f"⚡ Initializing Physics Engine across {self.num_gpus} GPUs...")

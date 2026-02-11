@@ -70,7 +70,7 @@ def inference_one_epoch(model, dataloader, mask_param, config, out_dir):
             
             # visualize the outputs and targets
             #out_img = out_img.detach().cpu().squeeze().numpy()
-            out_path = os.path.join(out_dir, f"inference_{batch_idx}.png")
+            out_path = os.path.join(out_dir, f"inference_{batch_idx}.tif")
             io.imsave(out_path, img_as_ubyte(rgb_image))
             print(f"Saved inference for key {batch_idx} to {out_path}")
             
@@ -95,14 +95,13 @@ def inference_one_epoch(model, dataloader, mask_param, config, out_dir):
                 compute_and_log_metrics(targets.cpu().numpy(), cnn_img.cpu().numpy(), out_dir, f"batch_{batch_idx}", num_classes=3)
             else:
                 raise ValueError(f"Unsupported num_classes: {config['num_classes']}")
-            gt_path = os.path.join(out_dir, f"ground_truth_{batch_idx}.png")
+            gt_path = os.path.join(out_dir, f"ground_truth_{batch_idx}.tif")
             skimage.io.imsave(gt_path, rgb_gt_image)
             print(f"Saved ground truth for key {batch_idx} to {gt_path}")
-            compute_and_log_metrics(gt_img, cnn_img.cpu().numpy(), out_dir, f"batch_{batch_idx}", num_classes=3)
             
             # camera image
             camera = model.physics(mask_param, bead_xyz_list)
-            camera_path = os.path.join(out_dir, f"camera_image_{batch_idx}.png")
+            camera_path = os.path.join(out_dir, f"camera_image_{batch_idx}.tif")
             camera_img = (camera.squeeze().detach().cpu().numpy() * config.get('camera_max_adu', 65535)).astype(np.uint16)
             skimage.io.imsave(camera_path, camera_img)
             print(f"Saved camera image for {batch_idx} to {camera_path}")
