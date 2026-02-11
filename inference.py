@@ -55,11 +55,18 @@ def inference_one_epoch(model, dataloader, mask_param, config, out_dir):
             # 2. FORWARD PASS
             # ---------------------------------------------------------
             logits = model(mask_param, bead_xyz_list)
-            probs = torch.softmax(logits, dim=1)
-            cnn_img = torch.argmax(probs,dim=1)
-            
-            class_data = probs[0, :3, :, :].detach().cpu().numpy()
-            rgb_image = np.transpose(class_data, (1, 2, 0))
+            if config['num_classes'] == 3:
+                probs = torch.softmax(logits, dim=1)
+                cnn_img = torch.argmax(probs,dim=1)
+                class_data = probs[0, :3, :, :].detach().cpu().numpy()
+                rgb_image = np.transpose(class_data, (1, 2, 0))
+            elif config['num_classes'] == 1:
+                probs = torch.sigmoid(logits)
+                gray_data = probs.squeeze().detach().cpu().numpy()
+                rgb_image = gray_data
+                cnn_img = (probs > 0.5).long()
+            else:
+                raise ValueError(f"Unsupported num_classes: {config['num_classes']}")
             
             # visualize the outputs and targets
             #out_img = out_img.detach().cpu().squeeze().numpy()
@@ -69,16 +76,25 @@ def inference_one_epoch(model, dataloader, mask_param, config, out_dir):
             
             # Save ground truth label from boolean grid
             gt_img = targets
+            print(f"Ground truth shape: {gt_img.shape}, dtype: {gt_img.dtype}")
             if torch.is_tensor(gt_img):
-                gt_img = gt_img.detach().cpu().numpy()
+                gt_img = gt_img.squeeze().detach().cpu().numpy()
             if gt_img.dtype == np.bool_:
                 gt_img = (gt_img.astype(np.uint8)) * 255
-            palette = np.array([
-                [255,   0,   0], # 0: Bright Red
-                [  0, 255,   0], # 1: Bright Green
-                [  0,   0, 255]  # 2: Bright Blue
-            ], dtype=np.uint8)
-            rgb_gt_image = palette[gt_img]
+            if config['num_classes'] == 3:
+                palette = np.array([
+                    [255,   0,   0], # 0: Bright Red
+                    [  0, 255,   0], # 1: Bright Green
+                    [  0,   0, 255]  # 2: Bright Blue
+                ], dtype=np.uint8)
+                
+                rgb_gt_image = palette[gt_img]
+                compute_and_log_metrics(targets.cpu().numpy(), cnn_img.cpu().numpy(), out_dir, f"batch_{batch_idx}", num_classes=3)
+            elif config['num_classes'] == 1:
+                rgb_gt_image = img_as_ubyte(gt_img)
+                compute_and_log_metrics(targets.cpu().numpy(), cnn_img.cpu().numpy(), out_dir, f"batch_{batch_idx}", num_classes=3)
+            else:
+                raise ValueError(f"Unsupported num_classes: {config['num_classes']}")
             gt_path = os.path.join(out_dir, f"ground_truth_{batch_idx}.png")
             skimage.io.imsave(gt_path, rgb_gt_image)
             print(f"Saved ground truth for key {batch_idx} to {gt_path}")

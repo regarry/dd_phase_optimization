@@ -391,6 +391,18 @@ def main():
             print(f"🟢 Epoch {epoch+1} Loss: {loss:.4f}| Val Loss: {val_loss:.4f}| LR: {current_lr:.2e}")
             if epoch == 0:
                 print_all_gpu_stats()
+                # also save the gpu stats to txt file
+                with open(os.path.join(training_results_dir, "gpu_stats.txt"), "w") as f:
+                    # save gpu statistics to text
+                    if torch.cuda.is_available():
+                        num_devices = torch.cuda.device_count()
+                        print("-" * 30,file=f)
+                        for i in range(num_devices):
+                            prop = torch.cuda.get_device_properties(i)
+                            allocated = torch.cuda.memory_allocated(i) / 1024**2
+                            reserved = torch.cuda.memory_reserved(i) / 1024**2
+                            print(f"GPU {i}: {prop.name} | Alloc: {allocated:.2f} MB | Res: {reserved:.2f} MB | Cap: {prop.total_memory / 1024**2:.2f} MB", file=f)
+                        print("-" * 30, file=f)
                 snapshot.dump()
                 snapshot.end()
             

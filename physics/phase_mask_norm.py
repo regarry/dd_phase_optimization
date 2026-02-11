@@ -243,7 +243,7 @@ if __name__ == "__main__":
     # IMPORTANT: Replace these paths with the actual paths to your TIFF file and desired output.
     
     # Updated file paths as per your request
-    input_file = "training_results/20260115-180254/mask_phase_epoch_26.tiff"
+    input_file = "./training_results/20260209-164818/mask_phase_epoch_32.tiff"
     parent_dir = os.path.dirname(input_file)
     datetime_str = datetime.now().strftime("%Y%m%d-%H%M%S")
 
@@ -280,7 +280,7 @@ if __name__ == "__main__":
 
     print(f"\nCheck '{output_file}' for the normalized and {'padded' if use_padding else 'resized'} 8-bit phase mask (without grating).")
 
-    print("\n--- Processing WITH Grating (applied BEFORE resize/padding) ---")
+    #print("\n--- Processing WITH Grating (applied BEFORE resize/padding) ---")
     # normalize_phase_image(input_file, output_file_with_grating, 
     #                       slm_width=slm_target_width, 
     #                       slm_height=slm_target_height, 

@@ -636,17 +636,61 @@ class OpticsSimulation(nn.Module):
         plt.tight_layout()
         plt.show(block=False)
         
-    def angular_spectrum_propagation(self, input_field, z, pad=False, debug=None):
+    def check_sampling_limit(self, z_pixels, grid_size, verbose=False):
+        """
+        Checks if the propagation distance causes aliasing in the transfer function.
+        Based on the criteria: z_crit = (N * dx^2) / lambda
+        
+        Args:
+            z_pixels (float): Propagation distance in pixels.
+            grid_size (tuple): (ny, nx) of the grid (use the PADDED size!).
+            verbose (bool): If True, prints a warning message.
+            
+        Returns:
+            bool: True if safe, False if aliasing is likely.
+        """
+        ny, nx = grid_size
+        
+        # Use the smallest dimension for the most conservative limit
+        N = min(ny, nx)
+        
+        # Convert z from pixels to meters for calculation
+        z_meters = z_pixels * self.px
+        
+        # Calculate Critical Distance (Safe Limit)
+        # Formula: z_max = (N * dx^2) / lambda
+        # This ensures the phase change between frequency pixels is < pi at the Nyquist edge.
+        wavelength_medium = self.wavelength / self.refractive_index
+        z_crit = (N * (self.px ** 2)) / wavelength_medium
+        
+        is_safe = z_meters < z_crit
+        
+        if verbose:
+            print(verbose)
+            status = "SAFE" if is_safe else "WARNING: ALIASING LIKELY"
+            print(f"--- ASM Sampling Check ---")
+            print(f"Prop Distance: {z_meters*1e3:.4f} mm")
+            print(f"Critical Limit: {z_crit*1e3:.4f} mm")
+            print(f"Status: {status}")
+            
+            if not is_safe:
+                print(f"  -> You are at {z_meters / z_crit * 100:.1f}% of the limit.")
+                print(f"  -> Suggestion: Use 'Band-Limited ASM' or switch to Fresnel propagation.")
+                    
+        return is_safe
+     
+    def angular_spectrum_propagation(self, input_field, z, pad=True, debug=False):
         """
         ASM propagation.
         Args:
             input_field (torch.Tensor): Complex field (..., H, W).
             z (float): Propagation distance in PIXELS.
         """
+        if debug:
+            self.debug_asm = False
+        #print(f"DEBUG PARAMETER RECEIVED AS: {debug}")
         # Handle dimensions
         *batch_dims, ny, nx = input_field.shape
-        if debug is None:
-            debug = self.debug_asm
         if pad:
             # Pad to double size (2*N) to avoid circular convolution artifacts
             pad_x = nx // 2
@@ -702,47 +746,6 @@ class OpticsSimulation(nn.Module):
         
         return output_field
     
-    def check_sampling_limit(self, z_pixels, grid_size, verbose=True):
-        """
-        Checks if the propagation distance causes aliasing in the transfer function.
-        Based on the criteria: z_crit = (N * dx^2) / lambda
-        
-        Args:
-            z_pixels (float): Propagation distance in pixels.
-            grid_size (tuple): (ny, nx) of the grid (use the PADDED size!).
-            verbose (bool): If True, prints a warning message.
-            
-        Returns:
-            bool: True if safe, False if aliasing is likely.
-        """
-        ny, nx = grid_size
-        
-        # Use the smallest dimension for the most conservative limit
-        N = min(ny, nx)
-        
-        # Convert z from pixels to meters for calculation
-        z_meters = z_pixels * self.px
-        
-        # Calculate Critical Distance (Safe Limit)
-        # Formula: z_max = (N * dx^2) / lambda
-        # This ensures the phase change between frequency pixels is < pi at the Nyquist edge.
-        wavelength_medium = self.wavelength / self.refractive_index
-        z_crit = (N * (self.px ** 2)) / wavelength_medium
-        
-        is_safe = z_meters < z_crit
-        
-        if verbose:
-            status = "SAFE" if is_safe else "WARNING: ALIASING LIKELY"
-            print(f"--- ASM Sampling Check ---")
-            print(f"Prop Distance: {z_meters*1e3:.4f} mm")
-            print(f"Critical Limit: {z_crit*1e3:.4f} mm")
-            print(f"Status: {status}")
-            
-            if not is_safe:
-                print(f"  -> You are at {z_meters / z_crit * 100:.1f}% of the limit.")
-                print(f"  -> Suggestion: Use 'Band-Limited ASM' or switch to Fresnel propagation.")
-                    
-        return is_safe
         
     # def angular_spectrum_propagation_old(self, input_field, z, debug=False):
     #     """
@@ -945,13 +948,13 @@ class OpticsSimulation(nn.Module):
         Ta = torch.exp(1j * phase_mask) # amplitude transmittance (in our case the slm reflectance)
         Ta = Ta[None, None, :]
         Uo = self.incident_gaussian * Ta # light directly behind the SLM (or in our case reflected from the SLM)
-        #output_layer = self.angular_spectrum_propagation(Uo, self.lenless_prop_distance/self.px, pad=True) # infront of lens
-        output_layer = self.fresnel_propagation(Uo, self.lenless_prop_distance/self.px) # infront of lens
-
+        if self.config['angular_spectrum_method'] == True:
+            output_layer = self.angular_spectrum_propagation(Uo, self.lenless_prop_distance/self.px, pad=True, debug = self.debug_asm) # infront of lens
+        else:
+            output_layer = self.fresnel_propagation(Uo, self.lenless_prop_distance/self.px) # infront of lens
         return output_layer
 
     
-
     def fourf(self, phase_mask, pad):
         Ta = torch.exp(1j * phase_mask).to(phase_mask.device) # amplitude transmittance (in our case the slm reflectance)
         Uo = self.incident_gaussian * Ta # light directly behind the SLM (or in our case reflected from the SLM)
@@ -1285,7 +1288,7 @@ class OpticsSimulation(nn.Module):
                     z = xyz[i, j, 2].type(torch.LongTensor)
 
                     x_ori = xyz[i, j, 0].type(torch.LongTensor)
-                    U1 = self.angular_spectrum_propagation(output_layer, x, pad = True, debug=False) # angular spectrum propagation
+                    U1 = self.angular_spectrum_propagation(output_layer, x, pad = True, debug = False) # angular spectrum propagation
                     U1_intensity = torch.real(U1 * torch.conj(U1)) # intensity of the propagated field
                     #U1 = self.fresnel_propagation(output_layer, x) # fresnel propagation
                     # Here we assume that the beam is being dithered up and down
