@@ -1,7 +1,7 @@
 # ==========================================
 # 5. BEAD & SAMPLE GENERATION
 # ==========================================
-num_particles_range: [450, 550] # [min, max] emitters per image. Strong GPU: [450, 550]
+num_particles_range: [550, 650] # [min, max] emitters per image. Strong GPU: [450, 550]
 bead_radius: 0.5          # pixels 1.0 default
 z_coupled_ratio: 0.5
 z_coupled_spacing_range: [1, 5] # need to change the code so that the z coupled beads are only generated around the in focus plane
@@ -10,7 +10,7 @@ z_coupled_spacing_range: [1, 5] # need to change the code so that the z coupled 
 # ==========================================
 # 1. OPTIMIZATION & TRAINING LOOP
 # ==========================================
-random_seed: 12345
+random_seed: 123
 ntrain: 960 #960          # default 640, how many bead volumes per epoch
 nvalid: 128 #128             # default 1000
 batch_size: 1              # Training batch size
@@ -25,8 +25,8 @@ learning_rate_scheduler_patience: 10
 learning_rate_scheduler_patience_min_lr: 1.0e-6
 
 # early stopping
-early_stopping_patience: 50   # Number of epochs with no improvement after which training
-early_stopping_min_delta: 0.0001 # Minimum change in the monitored quantity to qualify as an improvement
+early_stopping_patience: 200   # Number of epochs with no improvement after which training
+early_stopping_min_delta: 1.0e-5 # Minimum change in the monitored quantity to qualify as an improvement
 
 # Loss Function & Weights
 weights: [1.0, 1.0, 2.0]   # cross entropy loss weights (must be floats)
@@ -62,7 +62,7 @@ pad_4f: False                 # Whether to pad the field during 4f simulation to
 # ==========================================
 slm_px: 2.3e-6 # 0.1625e-6             # Physical pixel size of the SLM [m]
 phase_mask_pixel_size: 1024 # Number of pixels on the SLM side (resolution)
-initial_phase_mask: "empty"
+initial_phase_mask: "random"
 bessel_half_cone_angle_degrees: 5.2 
 phase_mask_upsample_factor: 1 # Scale factor for phase mask upsampling (simulation vs physical)
 

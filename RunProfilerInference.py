@@ -9,10 +9,10 @@ from datetime import datetime
 if __name__ == "__main__":
     # Set your arguments here
     #training_folder = "./training_results/800_beads_phase_model_20251021-111735"
-    training_folder = "./training_results/20260209-164818"
+    #training_folder = "./training_results/20260211-162226"
     
-    #training_folder = "./training_results/20260211-142428"
-    epoch = 32
+    training_folder = "./training_results/20260212-171014"
+    epoch = 115
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     inference_results = os.path.join(training_folder, timestamp)
     beam_profiles = inference_results

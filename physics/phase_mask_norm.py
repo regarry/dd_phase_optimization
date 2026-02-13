@@ -243,7 +243,7 @@ if __name__ == "__main__":
     # IMPORTANT: Replace these paths with the actual paths to your TIFF file and desired output.
     
     # Updated file paths as per your request
-    input_file = "./training_results/20260209-164818/mask_phase_epoch_32.tiff"
+    input_file = "./training_results/20260212-171014/mask_phase_epoch_115.tiff"
     parent_dir = os.path.dirname(input_file)
     datetime_str = datetime.now().strftime("%Y%m%d-%H%M%S")
 
@@ -291,4 +291,4 @@ if __name__ == "__main__":
     #                       grating_angle_deg=grating_angle)
 
     #print(f"\nCheck '{output_file_with_grating}' for the normalized and {'padded' if use_padding else 'resized'} 8-bit phase mask WITH blazed grating.")
-    print("Remember to replace 'input_phase_mask.tiff' with your actual input file path.")
+    #print("Remember to replace 'input_phase_mask.tiff' with your actual input file path.")

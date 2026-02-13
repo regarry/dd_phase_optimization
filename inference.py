@@ -63,15 +63,15 @@ def inference_one_epoch(model, dataloader, mask_param, config, out_dir):
             elif config['num_classes'] == 1:
                 probs = torch.sigmoid(logits)
                 gray_data = probs.squeeze().detach().cpu().numpy()
-                rgb_image = gray_data
-                cnn_img = (probs > 0.5).long()
+                rgb_image = gray_data * 255
+                #cnn_img = (probs > 0.5).long()
             else:
                 raise ValueError(f"Unsupported num_classes: {config['num_classes']}")
             
             # visualize the outputs and targets
             #out_img = out_img.detach().cpu().squeeze().numpy()
             out_path = os.path.join(out_dir, f"inference_{batch_idx}.tif")
-            io.imsave(out_path, img_as_ubyte(rgb_image))
+            io.imsave(out_path, gray_data)
             print(f"Saved inference for key {batch_idx} to {out_path}")
             
             # Save ground truth label from boolean grid
@@ -80,7 +80,7 @@ def inference_one_epoch(model, dataloader, mask_param, config, out_dir):
             if torch.is_tensor(gt_img):
                 gt_img = gt_img.squeeze().detach().cpu().numpy()
             if gt_img.dtype == np.bool_:
-                gt_img = (gt_img.astype(np.uint8)) * 255
+                gt_img = (gt_img.astype(np.uint8))
             if config['num_classes'] == 3:
                 palette = np.array([
                     [255,   0,   0], # 0: Bright Red
@@ -91,8 +91,8 @@ def inference_one_epoch(model, dataloader, mask_param, config, out_dir):
                 rgb_gt_image = palette[gt_img]
                 compute_and_log_metrics(targets.cpu().numpy(), cnn_img.cpu().numpy(), out_dir, f"batch_{batch_idx}", num_classes=3)
             elif config['num_classes'] == 1:
-                rgb_gt_image = img_as_ubyte(gt_img)
-                compute_and_log_metrics(targets.cpu().numpy(), cnn_img.cpu().numpy(), out_dir, f"batch_{batch_idx}", num_classes=3)
+                rgb_gt_image = gt_img
+                compute_and_log_metrics(gt_img, gray_data, out_dir, f"batch_{batch_idx}", num_classes=1)
             else:
                 raise ValueError(f"Unsupported num_classes: {config['num_classes']}")
             gt_path = os.path.join(out_dir, f"ground_truth_{batch_idx}.tif")
@@ -144,23 +144,44 @@ def main():
     out_dir = os.path.join(args.res_dir, "inference", dt_str)
     makedirs(out_dir)
     
-    if args.plot_train_loss:
-        loss_file = os.path.join(args.input_dir, "train_losses.txt")
-        if not os.path.exists(loss_file):
+    if args.plot_loss:
+        train_loss_file = os.path.join(args.input_dir, "train_losses.txt")
+        val_loss_file = os.path.join(args.input_dir, "val_losses.txt")
+        if not os.path.exists(train_loss_file):
             print(f"train_losses.txt not found in {args.input_dir}")
-        else:
-            with open(loss_file, "r") as f:
-                losses = [float(line.strip()) for line in f if line.strip()]
+        elif not os.path.exists(val_loss_file) and os.path.exists(train_loss_file):
+            print(f"val_losses.txt not found in {args.input_dir}")
+            print("Plotting only training loss.")
+            with open(train_loss_file, "r") as f:
+                train_losses = [float(line.strip()) for line in f if line.strip()]
             plt.figure()
-            plt.plot(losses, label="Training Loss")
+            plt.plot(train_losses, label="Training Loss")
             plt.xlabel("Epoch or Iteration")
             plt.ylabel("Loss")
-            plt.title("Training Loss Over Time")
+            plt.title("Log Loss Over Time")
             plt.yscale("log")
             plt.legend()
-            save_path = os.path.join(out_dir, "train_loss.png")
+            save_path = os.path.join(out_dir, "loss_plot.png")
             plt.savefig(save_path)
-            print(f"Training loss plot saved to {save_path}")
+            print(f"Loss plot saved to {save_path}")
+            
+        else:
+            with open(train_loss_file, "r") as f:
+                train_losses = [float(line.strip()) for line in f if line.strip()]
+                
+            with open(val_loss_file, "r") as f:
+                val_losses = [float(line.strip()) for line in f if line.strip()]
+            plt.figure()
+            plt.plot(train_losses, label="Training Loss")
+            plt.plot(val_losses, label="Validation Loss")
+            plt.xlabel("Epoch or Iteration")
+            plt.ylabel("Loss")
+            plt.title("Log Loss Over Time")
+            plt.yscale("log")
+            plt.legend()
+            save_path = os.path.join(out_dir, "loss_plot.png")
+            plt.savefig(save_path)
+            print(f"Loss plot saved to {save_path}")
     
     # Automatically determine CNN model path if not provided
     if not args.model_path:
@@ -203,13 +224,14 @@ def main():
     val_samples = []
 
     # Sorting by key ensures the order remains the same as the original loop
-    for i in sorted(labels_dict.keys()):
+    # i want to contstrain to 5 samples max for inference
+    for i in sorted(labels_dict.keys())[:5]:
         item = labels_dict[i]
         # Converting back to numpy arrays (standard for most ML data_pairs)
         sample_pair = (np.array(item['xyz']), np.array(item['target']))
         val_samples.append(sample_pair)
-        val_ds = ValidationDataset(val_samples)
-        val_loader = DataLoader(val_ds, batch_size=config['batch_size'], shuffle=False, num_workers=4)
+    val_ds = ValidationDataset(val_samples)
+    val_loader = DataLoader(val_ds, batch_size=config['batch_size'], shuffle=False, num_workers=4)
     
     # Instantiate CNN model based on config and load checkpoint
     cnn_config = config.copy()
@@ -226,14 +248,14 @@ def main():
     
     inference_one_epoch(cnn_model, val_loader, mask_param, config, out_dir)
     
-    loss_file = os.path.join(args.input_dir, "train_losses.txt")
-    if not os.path.exists(loss_file):
+    train_loss_file = os.path.join(args.input_dir, "train_losses.txt")
+    if not os.path.exists(train_loss_file):
         print(f"train_losses.txt not found in {args.input_dir}")
     else:
-        with open(loss_file, "r") as f:
-            losses = [float(line.strip()) for line in f if line.strip()]
+        with open(train_loss_file, "r") as f:
+            train_losses = [float(line.strip()) for line in f if line.strip()]
         plt.figure()
-        plt.plot(losses, label="Training Loss")
+        plt.plot(train_losses, label="Training Loss")
         plt.xlabel("Epoch or Iteration")
         plt.ylabel("Loss")
         plt.title("Training Loss Over Time")

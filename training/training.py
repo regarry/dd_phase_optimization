@@ -379,12 +379,14 @@ def main():
     
     # 6. Loop
     train_losses = []
+    val_losses = []
     with MemorySnapshot(os.path.join(training_results_dir, "crash_snapshot.pickle")) as snapshot:
         for epoch in range(config['max_epochs']):
             loss = train_one_epoch(model, train_loader, optimizer, criterion_ce, criterion_dice, 
                                    tv_loss, mask_param, config, epoch)
             train_losses.append(loss)
             val_loss = validate_one_epoch(model, val_loader, criterion_ce, criterion_dice, tv_loss, mask_param, config, epoch)
+            val_losses.append(val_loss)
             scheduler.step(val_loss)
             early_stopper(val_loss)
             current_lr = optimizer.param_groups[0]['lr']
@@ -408,6 +410,7 @@ def main():
             
             # Save artifacts
             np.savetxt(os.path.join(training_results_dir, 'train_losses.txt'), train_losses, delimiter=',')
+            np.savetxt(os.path.join(training_results_dir, 'val_losses.txt'), val_losses, delimiter=',')
             save_png(mask_param.detach(), training_results_dir, str(epoch).zfill(3), config)
             savePhaseMask(mask_param, epoch, training_results_dir)
             

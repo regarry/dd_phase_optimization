@@ -18,9 +18,9 @@ def compute_and_log_metrics(gt_img, cnn_img, out_dir, name, num_classes=2):
     gt_full = gt_img
     cnn_full = cnn_img
 
-    if num_classes == 2:
+    if num_classes == 1:
         precision_full, recall_full, f1_full = compute_metrics(gt_full, cnn_full)
-    else:
+    elif num_classes == 3:
         _, precision_full, recall_full, f1_full = compute_metrics_multiclass(gt_full, cnn_full, num_classes)
 
     print(f"Full image: Precision: {precision_full}, Recall: {recall_full}, F1: {f1_full}")
@@ -28,27 +28,27 @@ def compute_and_log_metrics(gt_img, cnn_img, out_dir, name, num_classes=2):
     # Top 1/3
     gt_top = gt_img[:h//3, :]
     cnn_top = cnn_img[:h//3, :]
-    if num_classes == 2:
+    if num_classes == 1:
         precision_top, recall_top, f1_top = compute_metrics(gt_top, cnn_top)
-    else:
+    elif num_classes == 3:
         _, precision_top, recall_top, f1_top = compute_metrics_multiclass(gt_top, cnn_top, num_classes)
     print(f"Top 1/3: Precision: {precision_top}, Recall: {recall_top}, F1: {f1_top}")
 
     # Middle 1/3
     gt_middle = gt_img[h//3:2*h//3, :]
     cnn_middle = cnn_img[h//3:2*h//3, :]
-    if num_classes == 2:
+    if num_classes == 1:
         precision_middle, recall_middle, f1_middle = compute_metrics(gt_middle, cnn_middle)
-    else:
+    elif num_classes == 3:
         _, precision_middle, recall_middle, f1_middle = compute_metrics_multiclass(gt_middle, cnn_middle, num_classes)
     print(f"Middle 1/3: Precision: {precision_middle}, Recall: {recall_middle}, F1: {f1_middle}")
 
     # Bottom 1/3
     gt_bottom = gt_img[2*h//3:, :]
     cnn_bottom = cnn_img[2*h//3:, :]
-    if num_classes == 2:
+    if num_classes == 1:
         precision_bottom, recall_bottom, f1_bottom = compute_metrics(gt_bottom, cnn_bottom)
-    else:
+    elif num_classes == 3:
         _, precision_bottom, recall_bottom, f1_bottom = compute_metrics_multiclass(gt_bottom, cnn_bottom, num_classes)
     print(f"Bottom 1/3: Precision: {precision_bottom}, Recall: {recall_bottom}, F1: {f1_bottom}")
 
