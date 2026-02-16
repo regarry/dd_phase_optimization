@@ -83,14 +83,13 @@ def img_save_tiff(img, out_dir, name, key=None, as_rgb=False, as_rgb_channels=Fa
         else:
             skimage.io.imsave(base_path, img)
             
-def save_png(image, output_dir, title, config):
+def save_png(image, output_path, config):
     """Saves a given image as a PNG file with a formatted title and colorbar."""
-    title_clean = title.replace(" ", "_")
-    png_path = os.path.join(output_dir, f"{title_clean}.png")
+    png_path = output_path
     plt.figure(figsize=(image.shape[1] / 30, image.shape[0] / 30))
     plt.imshow(normalize_to_uint16(image), cmap='hot', aspect='equal')
     plt.colorbar()
-    plt.title(f"{title}\nPixel size: {config['px']*10**6:.2f} um")
+    plt.title(f"Pixel size: {config['px']*10**6:.2f} um")
     plt.tight_layout()
     plt.savefig(png_path)
     plt.close('all')

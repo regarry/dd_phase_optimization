@@ -96,14 +96,14 @@ def inference_one_epoch(model, dataloader, mask_param, config, out_dir):
             else:
                 raise ValueError(f"Unsupported num_classes: {config['num_classes']}")
             gt_path = os.path.join(out_dir, f"ground_truth_{batch_idx}.tif")
-            skimage.io.imsave(gt_path, rgb_gt_image)
+            io.imsave(gt_path, rgb_gt_image)
             print(f"Saved ground truth for key {batch_idx} to {gt_path}")
             
             # camera image
             camera = model.physics(mask_param, bead_xyz_list)
             camera_path = os.path.join(out_dir, f"camera_image_{batch_idx}.tif")
             camera_img = (camera.squeeze().detach().cpu().numpy() * config.get('camera_max_adu', 65535)).astype(np.uint16)
-            skimage.io.imsave(camera_path, camera_img)
+            io.imsave(camera_path, camera_img)
             print(f"Saved camera image for {batch_idx} to {camera_path}")
             
 
@@ -131,7 +131,7 @@ def main():
     parser.add_argument("--y_max", type=int, default=50, help="Maximum y value for beam section generation")
     parser.add_argument("--max_intensity", type=float, help="Maximum intensity for the mask")
     parser.add_argument("--bead_volume", action="store_true", help="Save bead volume as tiff files")
-    parser.add_argument("--plot_train_loss", action="store_true", help="Plot the training loss over time from train_losses.txt in input_dir")
+    parser.add_argument("--plot_loss", action="store_true", help="Plot the training loss over time from train_losses.txt in input_dir")
     args = parser.parse_args()
     
     

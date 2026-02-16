@@ -11,8 +11,8 @@ if __name__ == "__main__":
     #training_folder = "./training_results/800_beads_phase_model_20251021-111735"
     #training_folder = "./training_results/20260211-162226"
     
-    training_folder = "./training_results/20260212-171014"
-    epoch = 115
+    training_folder = "./training_results/20260213-141257"
+    epoch = 205
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     inference_results = os.path.join(training_folder, timestamp)
     beam_profiles = inference_results
@@ -26,7 +26,7 @@ if __name__ == "__main__":
         "--epoch", str(epoch),
         "--res_dir", inference_results,
         "--num_inferences", "5",
-        "--plot_train_loss"
+        "--plot_loss"
         #"--device", "cuda"
     ]
     

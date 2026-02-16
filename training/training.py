@@ -13,6 +13,7 @@ import torch.optim as optim
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 from datetime import datetime
+from skimage import io
 import torch.nn.functional as F
 
 # --- Local Imports ---
@@ -22,7 +23,7 @@ from models.wrappers import ParallelEndToEndModel
 from data.preprocessing import generate_bead_templates
 from utils.debug import MemorySnapshot, print_all_gpu_stats
 from physics.masks import get_initial_phase_mask
-from physics.simulation import TotalVariationLoss
+from physics.simulation import TotalVariationLoss, apply_8bit_physics
 
 def train_one_epoch(model, dataloader, optimizer, criterion_ce, criterion_dice, tv_loss, mask_param, config, epoch):
     """
@@ -54,19 +55,22 @@ def train_one_epoch(model, dataloader, optimizer, criterion_ce, criterion_dice, 
         else:
              # For BCE, we usually want (Batch, 1, H, W) or (Batch, H, W) depending on implementation
              pass
-
+        # 1. APPLY HARDWARE PHYSICS
+        # mask_param is continuous and unbounded.
+        # physical_slm_phase is strictly 8-bit quantized.
+        physical_slm_phase = apply_8bit_physics(mask_param)
         # ---------------------------------------------------------
         # 2. FORWARD PASS (Through Parallel Wrapper)
         # ---------------------------------------------------------
         # Wrapper acts as traffic controller.
-        outputs = model(mask_param, bead_xyz_list)
+        outputs = model(physical_slm_phase, bead_xyz_list)
         
         # ---------------------------------------------------------
         # 3. LOSS & OPTIMIZATION
         # ---------------------------------------------------------
         criterion_ce_loss = criterion_ce(outputs, targets)
         criterion_dice_loss = criterion_dice(outputs, targets)
-        total_variation_loss = tv_loss(mask_param)
+        total_variation_loss = tv_loss(physical_slm_phase)
         oof_loss = 0.0
         if config.get('oof_loss_weight', 0.0) > 0.0:
             # Out-of-Focus (OOF) Light Penalty
@@ -134,11 +138,15 @@ def validate_one_epoch(model, dataloader, criterion_ce, criterion_dice, tv_loss,
                     targets = targets.squeeze(1).long()
             else:
                 pass
-
+            
+            # 1. APPLY HARDWARE PHYSICS
+            # mask_param is continuous and unbounded.
+            # physical_slm_phase is strictly 8-bit quantized.
+            physical_slm_phase = apply_8bit_physics(mask_param)
             # ---------------------------------------------------------
             # 2. FORWARD PASS
             # ---------------------------------------------------------
-            logits = model(mask_param, bead_xyz_list)
+            logits = model(physical_slm_phase, bead_xyz_list)
             
             # ---------------------------------------------------------
             # 3. LOSS CALCULATION
@@ -147,7 +155,7 @@ def validate_one_epoch(model, dataloader, criterion_ce, criterion_dice, tv_loss,
             criterion_dice_loss = criterion_dice(logits, targets)
             
             # We include TV loss in validation so the number compares 1:1 with training loss
-            total_variation_loss = tv_loss(mask_param)
+            total_variation_loss = tv_loss(physical_slm_phase)
             
             oof_loss = 0.0
             if config.get('oof_loss_weight', 0.0) > 0.0:
@@ -407,12 +415,40 @@ def main():
                         print("-" * 30, file=f)
                 snapshot.dump()
                 snapshot.end()
+                
+            with torch.no_grad():
+                max_stroke = 2 * np.pi # Or whatever your physical SLM's max stroke is
+                
+                # 2. Wrap the raw parameter just like in training
+                wrapped_phase = torch.remainder(mask_param, max_stroke)
+                
+                # 3. Scale it to the 8-bit 0-255 range
+                scaled_to_bits = (wrapped_phase / max_stroke) * 255.0
+                
+                # 4. Round to exact integer levels
+                rounded_bits = torch.round(scaled_to_bits)
+                
+                # 5. Convert to standard 8-bit image format (uint8 array)
+                # Move it off the GPU, convert to numpy, and change type to uint8
+                slm_display_image = rounded_bits.cpu().numpy().astype(np.uint8)
             
             # Save artifacts
             np.savetxt(os.path.join(training_results_dir, 'train_losses.txt'), train_losses, delimiter=',')
             np.savetxt(os.path.join(training_results_dir, 'val_losses.txt'), val_losses, delimiter=',')
-            save_png(mask_param.detach(), training_results_dir, str(epoch).zfill(3), config)
-            savePhaseMask(mask_param, epoch, training_results_dir)
+            
+            epoch_png_path = os.path.join(training_results_dir,"learned_phase_masks","png",f"mask_phase_epoch_{epoch}.png")
+            epoch_tif_path = os.path.join(training_results_dir,"learned_phase_masks","tif",f"mask_phase_epoch_{epoch}.tif")
+            epoch_bmp_path = os.path.join(training_results_dir,"learned_phase_masks","bmp",f"mask_phase_epoch_{epoch}.bmp")
+            
+            # create directories if they don't exist
+            os.makedirs(os.path.dirname(epoch_png_path), exist_ok=True)
+            os.makedirs(os.path.dirname(epoch_tif_path), exist_ok=True)
+            os.makedirs(os.path.dirname(epoch_bmp_path), exist_ok=True)
+            
+            io.imsave(epoch_tif_path, slm_display_image)
+            io.imsave(epoch_bmp_path, slm_display_image)
+            save_png(slm_display_image, epoch_png_path, config)
+            #savePhaseMask(slm_display_image, epoch, training_results_dir)
             
             if early_stopper.early_stop:
                 print("Early stopping triggered! Training stopped.")
