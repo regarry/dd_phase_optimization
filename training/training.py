@@ -125,6 +125,13 @@ def validate_one_epoch(model, dataloader, criterion_ce, criterion_dice, tv_loss,
     
     # Disable gradient calculation for validation
     with torch.no_grad():
+        # 1. APPLY HARDWARE PHYSICS
+        # mask_param is continuous and unbounded.
+        # physical_slm_phase is strictly 8-bit quantized.
+        physical_slm_phase = apply_8bit_physics(mask_param)
+        
+        # We include TV loss in validation so the number compares 1:1 with training loss
+        total_variation_loss = tv_loss(physical_slm_phase)
         for batch_idx, (bead_xyz_list, targets) in enumerate(dataloader):
             # ---------------------------------------------------------
             # 1. MOVE DATA TO MAIN GPU
@@ -139,10 +146,7 @@ def validate_one_epoch(model, dataloader, criterion_ce, criterion_dice, tv_loss,
             else:
                 pass
             
-            # 1. APPLY HARDWARE PHYSICS
-            # mask_param is continuous and unbounded.
-            # physical_slm_phase is strictly 8-bit quantized.
-            physical_slm_phase = apply_8bit_physics(mask_param)
+            
             # ---------------------------------------------------------
             # 2. FORWARD PASS
             # ---------------------------------------------------------
@@ -154,8 +158,7 @@ def validate_one_epoch(model, dataloader, criterion_ce, criterion_dice, tv_loss,
             criterion_ce_loss = criterion_ce(logits, targets)
             criterion_dice_loss = criterion_dice(logits, targets)
             
-            # We include TV loss in validation so the number compares 1:1 with training loss
-            total_variation_loss = tv_loss(physical_slm_phase)
+            
             
             oof_loss = 0.0
             if config.get('oof_loss_weight', 0.0) > 0.0:
@@ -445,18 +448,19 @@ def main():
             os.makedirs(os.path.dirname(epoch_tif_path), exist_ok=True)
             os.makedirs(os.path.dirname(epoch_bmp_path), exist_ok=True)
             
-            io.imsave(epoch_tif_path, slm_display_image)
+            io.imsave(epoch_tif_path, mask_param.detach().cpu().numpy().astype(np.float32))
             io.imsave(epoch_bmp_path, slm_display_image)
             save_png(slm_display_image, epoch_png_path, config)
             #savePhaseMask(slm_display_image, epoch, training_results_dir)
             
+            if epoch % 5 == 0 or epoch == config['max_epochs'] - 1 or early_stopper.early_stop:
+                epoch_model_path = os.path.join(training_results_dir, "models", f'net_{epoch}.pt')
+                os.makedirs(os.path.dirname(epoch_model_path), exist_ok=True)
+                torch.save(model.state_dict(), epoch_model_path)
+                
             if early_stopper.early_stop:
-                print("Early stopping triggered! Training stopped.")
-                torch.save(model.state_dict(), os.path.join(training_results_dir, f'net_{epoch}.pt'))
+                print(f"Early stopping triggered at epoch {epoch+1}. No improvement in validation loss for {early_stopper.patience} epochs.")
                 break
-            
-            if epoch % 5 == 0 or epoch == config['max_epochs'] - 1:
-                torch.save(model.state_dict(), os.path.join(training_results_dir, f'net_{epoch}.pt'))
     elapsed = time.time() - start_time
     print(f"Training completed in {elapsed/60/60:.2f} hours.")
 if __name__ == '__main__':

@@ -14,26 +14,27 @@ def get_initial_phase_mask(config):
     """
     mode = config.get('initial_phase_mask', 'empty')
     size = config['phase_mask_pixel_size']
+    slm_px = config['slm_px'] # in meters
     
     # 1. Physics-based initialization (Axicon)
     if mode == "axicon":
         # Ensure parameters exist
         angle = config.get('bessel_half_cone_angle_degrees', 1.0)
-        px_m = config['px'] # config['px'] should already be in meters from main() correction
+        #px_m = slm_px # config['slm_px'] should already be in meters from main() correction
         wavelength_m = config['wavelength'] # already in meters
         
         print(f"Initializing with Axicon (Angle: {angle}°)...")
         return generate_axicon_phase_mask(
             (size, size), 
-            px_m * 1e6,       # bessel function expects microns
+            slm_px * 1e6,       # bessel function expects microns
             wavelength_m * 1e9, # bessel function expects nm
             angle
         )
     elif mode == "lens":
         print("Initializing with Lens Phase Mask...")
         # Simple quadratic lens phase profile
-        x = np.linspace(-size//2, size//2 - 1, size) * config['px'] * 1e6 # in microns
-        y = np.linspace(-size//2, size//2 - 1, size) * config['px'] * 1e6 # in microns
+        x = np.linspace(-size//2, size//2 - 1, size) * slm_px * 1e6 # in microns
+        y = np.linspace(-size//2, size//2 - 1, size) * slm_px * 1e6 # in microns
         X, Y = np.meshgrid(x, y)
         focal_length_mm = config['lenless_prop_distance'] * 1e3 # Example focal length in mm
         wavelength_nm = config['wavelength'] * 1e9 # in nm

@@ -16,6 +16,8 @@ def main():
     parser.add_argument("--mask", type=str, default="", help="Optional: path to phase mask tiff (default: zeros)")
     parser.add_argument("--output_dir", type=str, default="beam_profile_test", help="Output directory")
     parser.add_argument("--fresnel_lens_pattern", action="store_true", help="Use Fresnel lens phase mask")
+    parser.add_argument("--bessel_angle", type=float, default=0.0, help="Bessel cone angle in degrees (default: 0, no axicon)")
+    parser.add_argument("--gen_phase_mask", type=str, default="", help="Optional: 'axicon', 'fresnel_lens', or 'empty' to generate a phase mask pattern")
     args = parser.parse_args()
 
     # Create a timestamped subfolder output dir
@@ -37,7 +39,7 @@ def main():
     px_um = px * 1e6 # px in um
     wavelength_nm = config['wavelength'] * 1e9 # wavelength in nm
     beam_fwhm = config['laser_beam_FWHC']
-    bessel_angle = config['bessel_half_cone_angle_degrees']
+    #bessel_angle = config['bessel_half_cone_angle_degrees']
     #config['device'] = 'cuda' if torch.cuda.is_available() else 'cpu'
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     phase_mask_upsample_factor = config.get('phase_mask_upsample_factor', 1)
@@ -75,33 +77,34 @@ def main():
     if args.mask:
         print(f"Loading phase mask from {args.mask}")
         mask_np = skimage.io.imread(args.mask).astype(np.float32)
-        if mask_np.shape != (N, N):
-            raise ValueError(f"Loaded mask shape {mask_np.shape} does not match expected {(N, N)}")
-    
-    elif bessel_angle > 0 and initial_phase_mask == "axicon":
-        print(f"Generating axicon phase mask: {N}x{N}, {px_um}um, {wavelength_nm}nm, angle={bessel_angle}deg")
+        
+    elif args.bessel_angle > 0 and args.gen_phase_mask == "axicon":
+        print(f"Generating axicon phase mask: {N}x{N}, {px_um}um, {wavelength_nm}nm, angle={args.bessel_angle}deg")
         mask_np = generate_axicon_phase_mask(
             mask_resolution_pixels=(N, N),
             pixel_pitch_um=px_um,
             wavelength_nm=wavelength_nm,
-            bessel_cone_angle_degrees=bessel_angle
+            bessel_half_cone_angle_degrees=args.bessel_angle
         )
         
-    elif initial_phase_mask == "fresnel_lens":
-        print(f"Generating a Fresnel lens phase mask: {N}x{N}, {px_um}um, {wavelength_nm}nm, focal_length={config['focal_length']}m")
+    elif args.gen_phase_mask == "fresnel_lens":
+        #print(config)
+        focal_length = config['lensless_prop_distance']
+        print(f"Generating a Fresnel lens phase mask: {N}x{N}, {px_um}um, {wavelength_nm}nm, focal_length={focal_length}m")
         # Generate Fresnel lens phase mask
         yy, xx = np.meshgrid(np.arange(N) - N // 2, np.arange(N) - N // 2)
         r = np.sqrt(xx**2 + yy**2) * px_um * 1e-6  # radius in meters
-        fresnel_phase = (-np.pi / (wavelength_nm * 1e-9 * config['fresnel_lens_focal_length'])) * (r ** 2)
+        fresnel_phase = (-np.pi / (wavelength_nm * 1e-9 * focal_length)) * (r ** 2)
         mask_np = np.mod(fresnel_phase, 2 * np.pi).astype(np.float32)
    
-    elif initial_phase_mask == "empty":
+    elif args.gen_phase_mask == "empty":
         print("Using empty phase mask (zeros)")
         mask_np = np.zeros((N, N), dtype=np.float32)
         
     else:
-        print("No phase mask specified, using empty mask (zeros)")
-        mask_np = np.zeros((N, N), dtype=np.float32)
+        print("No phase mask specified")
+        exit()
+        
 
     # save the mask as png figure for easy viewing
     mask_png_path = os.path.join(output_subdir, "mask.png")
@@ -113,7 +116,7 @@ def main():
     plt.savefig(mask_png_path)
     print(f"Saved phase mask as PNG to {mask_png_path}")
 
-    mask_tensor = torch.from_numpy(mask_np).type(torch.FloatTensor).to(device)
+    #mask_tensor = torch.from_numpy(mask_np).type(torch.FloatTensor).to(device)
 
     config['Nimgs'] = 1
     lens_approach = config['lens_approach']
@@ -131,6 +134,12 @@ def main():
     else:
         mask_tensor = torch.from_numpy(mask_np).type(torch.FloatTensor).to(device)
         
+    #check type of mask_tensor
+    print(f"mask_tensor shape: {mask_tensor.shape}, dtype: {mask_tensor.dtype}, device: {mask_tensor.device}")    
+    # Convert to radians if max value is 255
+    if mask_tensor.max() == 255:
+        print("Converting mask from 8-bit to radians")
+        mask_tensor = (mask_tensor / 255.0) * 2 * np.pi
     with torch.no_grad():
         if lens_approach == 'against_lens':
             print("are you sure you didnt mean fourier lens?")

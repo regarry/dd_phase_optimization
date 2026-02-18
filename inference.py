@@ -15,6 +15,7 @@ from datetime import datetime
 import skimage
 from skimage import io, img_as_ubyte
 import matplotlib.pyplot as plt
+from pathlib import Path
 
 # --- Local Imports ---
 from data.io import expand_config, load_config, makedirs, save_png, savePhaseMask
@@ -202,12 +203,30 @@ def main():
     config["model_path"] = args.model_path
     learned_lens_approach = config['lens_approach']
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
     # Load mask from tiff file (for both models)
-    mask_path = os.path.join(args.input_dir, f"mask_phase_epoch_{args.epoch}.tiff")
+    mask_path_1 = Path(os.path.join(args.input_dir, f"mask_phase_epoch_{args.epoch}.tiff"))
+    mask_path_2 = Path(os.path.join(args.input_dir, f"mask_phase_epoch_{args.epoch}.tif"))
+    mask_path_3 = Path(os.path.join(args.input_dir, "learned_phase_masks","tif",f"mask_phase_epoch_{args.epoch}.tif"))
+    
+    if mask_path_1.exists():
+        mask_path = mask_path_1
+    elif mask_path_2.exists():
+        mask_path = mask_path_2
+    elif mask_path_3.exists():
+        mask_path = mask_path_3
+    else:
+        raise FileNotFoundError(f"Mask file not found for epoch {args.epoch} in {args.input_dir}")
+    
+    #mask_path = os.path.join(args.input_dir, f"mask_phase_epoch_{args.epoch}.tiff")
     mask_np = skimage.io.imread(mask_path)
     mask_tensor = torch.from_numpy(mask_np).type(torch.FloatTensor).to(device)
-    mask_param = torch.nn.Parameter(mask_tensor, requires_grad=False)
     
+    if mask_tensor.max() == 255:
+        print("Converting mask from 8-bit to radians")
+        mask_tensor = (mask_tensor / 255.0) * 2 * np.pi
+    
+    mask_param = torch.nn.Parameter(mask_tensor, requires_grad=False)
     # Save updated configuration in out_dir, including inference epoch.
     config_output_path = os.path.join(out_dir, "config.yaml")
     with open(config_output_path, "w") as f:

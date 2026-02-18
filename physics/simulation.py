@@ -419,7 +419,7 @@ class OpticsSimulation(nn.Module):
             dtype=torch.float32
                                                         )# scaling factor for the illumination
         camera_max_adu = config.get('camera_max_adu')  # maximum ADU for the camera
-        self.lenless_prop_distance = config.get('lenless_prop_distance', 1.0e-3)  # distance for lensless propagation
+        self.lensless_prop_distance = config.get('lensless_prop_distance', 1.0e-3)  # distance for lensless propagation
         self.extra_prop_distance = config.get('extra_prop_distance', 0.0)  # extra distance for propagation    
         self.datetime = datetime.now().strftime("%Y%m%d-%H%M%S")
         self.conv3d = config.get('conv3d', False)
@@ -1003,7 +1003,7 @@ class OpticsSimulation(nn.Module):
         Ta = torch.exp(1j * phase_mask) # amplitude transmittance (in our case the slm reflectance)
         Ta = Ta[None, None, :]
         Uo = self.incident_gaussian * Ta # light directly behind the SLM (or in our case reflected from the SLM)
-        output_layer = self.angular_spectrum_propagation(Uo, self.lenless_prop_distance/self.px, pad=True) # infront of lens
+        output_layer = self.angular_spectrum_propagation(Uo, self.lensless_prop_distance/self.px, pad=True) # infront of lens
         return output_layer
     
     def sample_4f(self, phase_mask):
@@ -1011,9 +1011,9 @@ class OpticsSimulation(nn.Module):
         Ta = Ta[None, None, :]
         Uo = self.incident_gaussian * Ta # light directly behind the SLM (or in our case reflected from the SLM)
         if self.config['angular_spectrum_method'] == True:
-            output_layer = self.angular_spectrum_propagation(Uo, self.lenless_prop_distance/self.px, pad=True, debug = self.debug_asm) # infront of lens
+            output_layer = self.angular_spectrum_propagation(Uo, self.lensless_prop_distance/self.px, pad=True, debug = self.debug_asm) # infront of lens
         else:
-            output_layer = self.fresnel_propagation(Uo, self.lenless_prop_distance/self.px) # infront of lens
+            output_layer = self.fresnel_propagation(Uo, self.lensless_prop_distance/self.px) # infront of lens
         return output_layer
 
     
