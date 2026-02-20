@@ -33,6 +33,7 @@ def main():
     else:
         config = load_config(args.config)
     N = config['phase_mask_pixel_size']
+    slm_px = float(config["slm_px"])
     px = float(config['px'])  # pixel size in meters
     config['px'] = px  # Store pixel size in config for later use
     px_mm = px * 1e3 # px in mm
@@ -79,22 +80,22 @@ def main():
         mask_np = skimage.io.imread(args.mask).astype(np.float32)
         
     elif args.bessel_angle > 0 and args.gen_phase_mask == "axicon":
-        print(f"Generating axicon phase mask: {N}x{N}, {px_um}um, {wavelength_nm}nm, angle={args.bessel_angle}deg")
+        print(f"Generating axicon phase mask: {N}x{N}, {slm_px*1e6}um, {wavelength_nm}nm, angle={args.bessel_angle}deg")
         mask_np = generate_axicon_phase_mask(
             mask_resolution_pixels=(N, N),
-            pixel_pitch_um=px_um,
+            pixel_pitch_um=slm_px*1.0e6,
             wavelength_nm=wavelength_nm,
             bessel_half_cone_angle_degrees=args.bessel_angle
         )
         
     elif args.gen_phase_mask == "fresnel_lens":
         #print(config)
-        focal_length = config['lensless_prop_distance']
-        print(f"Generating a Fresnel lens phase mask: {N}x{N}, {px_um}um, {wavelength_nm}nm, focal_length={focal_length}m")
+        focal_length = config['lensless_prop_distance'] # in meters
+        print(f"Generating a Fresnel lens phase mask: {N}x{N}, {slm_px*1e6}um, {wavelength_nm}nm, focal_length={focal_length}m")
         # Generate Fresnel lens phase mask
         yy, xx = np.meshgrid(np.arange(N) - N // 2, np.arange(N) - N // 2)
-        r = np.sqrt(xx**2 + yy**2) * px_um * 1e-6  # radius in meters
-        fresnel_phase = (-np.pi / (wavelength_nm * 1e-9 * focal_length)) * (r ** 2)
+        r = np.sqrt(xx**2 + yy**2) * slm_px  # radius in meters
+        fresnel_phase = -(np.pi / (wavelength_nm * 1e-9 * focal_length)) * (r ** 2)
         mask_np = np.mod(fresnel_phase, 2 * np.pi).astype(np.float32)
    
     elif args.gen_phase_mask == "empty":
@@ -109,12 +110,16 @@ def main():
     # save the mask as png figure for easy viewing
     mask_png_path = os.path.join(output_subdir, "mask.png")
     plt.figure(figsize=(8, 6))
-    plt.imshow(mask_np, cmap='gray', aspect='auto')
+    plt.imshow(mask_np, cmap='hot', aspect='auto')
     plt.colorbar()
     plt.title("Phase Mask")
     plt.tight_layout()
     plt.savefig(mask_png_path)
     print(f"Saved phase mask as PNG to {mask_png_path}")
+    # save as tif
+    mask_tif_path = os.path.join(output_subdir, "mask.tif")
+    skimage.io.imsave(mask_tif_path, mask_np)
+    
 
     #mask_tensor = torch.from_numpy(mask_np).type(torch.FloatTensor).to(device)
 

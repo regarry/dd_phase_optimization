@@ -1,7 +1,7 @@
 #!/bin/bash
 #BSUB -n 8
 #BSUB -W 2:00
-#BSUB -R "rusage[mem=16GB]"
+#BSUB -R "rusage[mem=32GB]"
 #BSUB -q short_gpu
 #BSUB -gpu "num=1:mode=shared:mps=no"
 #BSUB -J psf_inference

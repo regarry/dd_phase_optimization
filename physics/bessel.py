@@ -2,10 +2,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 def generate_axicon_phase_mask(
-    mask_resolution_pixels=(512, 512),
-    pixel_pitch_um=10,  # Micrometers per pixel on the SLM
-    wavelength_nm=632.8,  # Wavelength of light (e.g., HeNe laser)
-    bessel_half_cone_angle_degrees=1.0, # Desired cone angle of the Bessel beam in degrees
+    mask_resolution_pixels,
+    pixel_pitch_um,  # Micrometers per pixel on the SLM
+    wavelength_nm,  # Wavelength of light (e.g., HeNe laser)
+    bessel_half_cone_angle_degrees, # Desired half cone angle of the Bessel beam in degrees
 ):
     """
     Generates a 2D axicon phase mask for a phase SLM to produce a Bessel beam.

@@ -182,6 +182,7 @@ class RelativeNoise(nn.Module):
         relative_noise = noise * (x.abs() * self.noise_fraction)
         
         return x + relative_noise
+
 class NoiseLayer(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -191,27 +192,28 @@ class NoiseLayer(nn.Module):
         self.read_noise_std = torch.tensor(config['read_noise_std'], dtype=torch.float32)
         self.camera_gain = torch.tensor(config['camera_gain'], dtype=torch.float32)
         self.camera_max_adu = torch.tensor(config['camera_max_adu'], dtype=torch.float32)
+        
+        # Hyperparameters (extracted from hardcoded values)
+        self.robust_max_percentile = float(config['robust_max_percentile'])
+        self.target_saturation_ratio = float(config['target_saturation_ratio'])
+        self.epsilon = float(config['epsilon'])
+        self.min_clip_value = float(config['min_clip_value'])
 
     def forward(self, ideal_image_volume):
         device = ideal_image_volume.device
         img = ideal_image_volume.to(device=device, dtype=torch.float32)
         
         # --- ROBUST AUTO-EXPOSURE ---
-        # Instead of a learnable parameter, we dynamically normalize.
-        # 1. Find the 99.9th percentile (robust max) to ignore single hot pixels
-        #    (For sparse beads, max() is okay, but percentile is safer against outliers)
+        # 1. Find the percentile (robust max) to ignore single hot pixels
         batch_flat = img.view(img.size(0), -1)
-        robust_max = torch.quantile(batch_flat, 0.999, dim=1)
+        robust_max = torch.quantile(batch_flat, self.robust_max_percentile, dim=1)
         
         # 2. Calculate target peak electrons based on camera capacity
-        #    We aim for 90% of full well capacity to stay safe from saturation
-        #    Full Well (in e-) = Max ADU / Gain
         full_well_electrons = self.camera_max_adu.to(device) / self.camera_gain.to(device)
-        target_peak_electrons = full_well_electrons * 0.90
+        target_peak_electrons = full_well_electrons * self.target_saturation_ratio
         
         # 3. Calculate the Scaling Factor (Exposure Time) needed for this specific batch
-        #    Add epsilon to avoid div by zero
-        scaling_factor = target_peak_electrons / (robust_max + 1e-6)
+        scaling_factor = target_peak_electrons / (robust_max + self.epsilon)
         
         # 4. Broadcast scale to shape [Batch, 1, 1, 1] for multiplication
         scaling_factor = scaling_factor.view(-1, 1, 1, 1)
@@ -221,18 +223,18 @@ class NoiseLayer(nn.Module):
         
         # --- Continue with Physics ---
         mean_signal = img_scaled * self.quantum_efficiency.to(device)
-        mean_total = torch.clamp_min(mean_signal + self.dark_current_mean.to(device), 0.0)
+        mean_total = torch.clamp_min(mean_signal + self.dark_current_mean.to(device), self.min_clip_value)
         
         # Shot Noise
-        shot_std = torch.sqrt(mean_total + 1e-6)
+        shot_std = torch.sqrt(mean_total + self.epsilon)
         electrons_shot = mean_total + (shot_std * torch.randn_like(mean_total))
         
         # Read Noise & ADU
         electrons_total = electrons_shot + (self.read_noise_std.to(device) * torch.randn_like(electrons_shot))
         raw_adu = electrons_total * self.camera_gain.to(device)
         
-        # Hard Clamp is now safe because we mathematically ensured we are within range
-        final_adu = torch.clamp(raw_adu, min=0.0, max=self.camera_max_adu.to(device))
+        # Hard Clamp
+        final_adu = torch.clamp(raw_adu, min=self.min_clip_value, max=self.camera_max_adu.to(device))
         
         return final_adu
 
@@ -359,6 +361,28 @@ class PhysicalSLM(nn.Module):
         
         return slm_output_phase
 
+def get_max_aperture_radius_pixels(wavelength_m, focal_length_m, pixel_size_m):
+    """
+    Calculates the maximum valid radius (in pixels) for a Fresnel lens 
+    to prevent Nyquist aliasing at the edges.
+
+    Args:
+        wavelength_nm: Wavelength of the light in nanometers.
+        focal_length_m: Target focal length of the lens in meters.
+        pixel_size_um: Pixel pitch of the computational grid in micrometers.
+
+    Returns:
+        float: The maximum valid radius in pixels.
+    """
+    # Convert everything to standard SI units (meters)
+    
+    # Calculate physical maximum radius in meters
+    r_max_m = (wavelength_m * focal_length_m) / (2 * pixel_size_m)
+    
+    # Convert physical radius to pixel radius
+    r_max_pixels = r_max_m / pixel_size_m
+    
+    return r_max_pixels
 
 def apply_8bit_physics(raw_phase, max_stroke=2*np.pi):
     """
@@ -639,39 +663,41 @@ class OpticsSimulation(nn.Module):
         
         return gamma.float()#, evanescent_mask.float()
         
-    def circular_aperature(self, arr):
+    def circular_aperture(self, arr, max_pixel_radius=None):
         """
         Sets elements outside a centered circle to zero for a PyTorch tensor.
 
         Args:
-        arr: A 2D square PyTorch tensor.
+            arr: A 2D square PyTorch tensor.
+            max_pixel_radius: The maximum radius of the aperture in pixels. 
+                              If None, defaults to the largest circle that fits the tensor.
 
         Returns:
-        A new PyTorch tensor with elements outside the circle set to zero.
+            A new PyTorch tensor with elements outside the circle set to zero.
         """
         h = arr.shape[0]
         if arr.shape[1] != h:
             raise ValueError("Input tensor must be square.")
 
-        center_x = (h - 1) / 2
-        center_y = (h - 1) / 2
-        radius = h / 2
+        # If no radius is provided, default to the edge of the array
+        if max_pixel_radius is None:
+            max_pixel_radius = h / 2.0
 
-        # Create a meshgrid of coordinates
-        x = torch.arange(h)
-        y = torch.arange(h)
-        xx, yy = torch.meshgrid(x, y, indexing='ij')  # Use indexing='ij' for correct meshgrid
+        center_x = (h - 1) / 2.0
+        center_y = (h - 1) / 2.0
 
-        # Calculate the distance from each point to the center
+        # Create a meshgrid of coordinates (matched to the input tensor's device)
+        x = torch.arange(h, device=arr.device)
+        y = torch.arange(h, device=arr.device)
+        xx, yy = torch.meshgrid(x, y, indexing='ij')
+
+        # Calculate the distance from each point to the center in pixels
         distances = torch.sqrt((xx - center_x)**2 + (yy - center_y)**2)
 
-        # Create a mask where True indicates points inside the circle
-        mask = distances <= radius
+        # Create a mask where True indicates points inside the valid radius
+        mask = distances <= max_pixel_radius
 
-        # Apply the mask to the array
-        result = arr * mask
-
-        return result
+        return mask
     
     @staticmethod
     def _visualize_step(title, tensor):
@@ -1009,7 +1035,18 @@ class OpticsSimulation(nn.Module):
     def sample_4f(self, phase_mask):
         Ta = torch.exp(1j * phase_mask) # amplitude transmittance (in our case the slm reflectance)
         Ta = Ta[None, None, :]
-        Uo = self.incident_gaussian * Ta # light directly behind the SLM (or in our case reflected from the SLM)
+        if self.aperature:
+            safe_radius_px = 2*get_max_aperture_radius_pixels(self.wavelength, self.lensless_prop_distance, self.slm_px)
+            print(f"Applying aperture with radius: {safe_radius_px:.1f} pixels") 
+            # For your setup, this will output ~477.6 pixels
+
+            # 3. Apply the aperture to your complex field
+            # Assuming 'complex_field' is your PyTorch tensor right after multiplying the lens phase
+            aperature = self.circular_aperture(self.incident_gaussian, max_pixel_radius=safe_radius_px)
+        else:
+            # else aperature is just identity matrix
+            aperature  = torch.ones_like(self.incident_gaussian)
+        Uo = self.incident_gaussian * Ta * aperature # light directly behind the SLM (or in our case reflected from the SLM)
         if self.config['angular_spectrum_method'] == True:
             output_layer = self.angular_spectrum_propagation(Uo, self.lensless_prop_distance/self.px, pad=True, debug = self.debug_asm) # infront of lens
         else:

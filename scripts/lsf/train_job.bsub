@@ -4,14 +4,15 @@
 #BSUB -R "rusage[mem=32GB]"
 #BSUB -q bme_gpu
 #BSUB -gpu "num=3:mode=exclusive_process:mps=no"
-#BSUB -R "select[hname!=gpu18]"
+##BSUB -R "select[hname!=gpu18]"
 #BSUB -J train_dd
 #BSUB -o ./logs/.%J
 #BSUB -e ./logs/.%J
+
 hostname
 nvidia-smi
-nvidia-smi -q -d ECC
-nvidia-smi --query-gpu=index,name,ecc.errors.uncorrectable.aggregate,memory.total,utilization.gpu --format=csv
+#nvidia-smi -q -d ECC
+#nvidia-smi --query-gpu=index,name,ecc.errors.uncorrectable.aggregate,memory.total,utilization.gpu --format=csv
 #nvidia-smi topo -m
 
 module load conda

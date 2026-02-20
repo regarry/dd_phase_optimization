@@ -60,11 +60,11 @@ def inference_one_epoch(model, dataloader, mask_param, config, out_dir):
                 probs = torch.softmax(logits, dim=1)
                 cnn_img = torch.argmax(probs,dim=1)
                 class_data = probs[0, :3, :, :].detach().cpu().numpy()
-                rgb_image = np.transpose(class_data, (1, 2, 0))
+                #rgb_image = np.transpose(class_data, (1, 2, 0))
             elif config['num_classes'] == 1:
                 probs = torch.sigmoid(logits)
                 gray_data = probs.squeeze().detach().cpu().numpy()
-                rgb_image = gray_data * 255
+                #rgb_image = gray_data * 255
                 #cnn_img = (probs > 0.5).long()
             else:
                 raise ValueError(f"Unsupported num_classes: {config['num_classes']}")
@@ -103,7 +103,7 @@ def inference_one_epoch(model, dataloader, mask_param, config, out_dir):
             # camera image
             camera = model.physics(mask_param, bead_xyz_list)
             camera_path = os.path.join(out_dir, f"camera_image_{batch_idx}.tif")
-            camera_img = (camera.squeeze().detach().cpu().numpy() * config.get('camera_max_adu', 65535)).astype(np.uint16)
+            camera_img = (camera.squeeze().detach().cpu().numpy() * config.get('camera_max_adu', 65535))
             io.imsave(camera_path, camera_img)
             print(f"Saved camera image for {batch_idx} to {camera_path}")
             
@@ -197,7 +197,13 @@ def main():
         #     chosen_epoch = candidate_high
         chosen_epoch = args.epoch
         model_file = f"net_{chosen_epoch}.pt"
-        args.model_path = os.path.join(args.input_dir, model_file)
+        model_path_1 = Path(os.path.join(args.input_dir, "models", model_file))
+        model_path_2 = Path(os.path.join(args.input_dir, model_file))
+        if model_path_1.exists():
+            args.model_path = model_path_1
+        elif mask_path_2.exists():
+            args.model_path = model_path_2
+        #args.model_path = os.path.join(args.input_dir, "models", model_file)
         print(f"Automatically using CNN model: {args.model_path}")
         
     config["model_path"] = args.model_path
@@ -266,7 +272,7 @@ def main():
 
     
     inference_one_epoch(cnn_model, val_loader, mask_param, config, out_dir)
-    
+    """
     train_loss_file = os.path.join(args.input_dir, "train_losses.txt")
     if not os.path.exists(train_loss_file):
         print(f"train_losses.txt not found in {args.input_dir}")
@@ -283,7 +289,7 @@ def main():
         save_path = os.path.join(out_dir, "train_loss.png")
         plt.savefig(save_path)
         print(f"Training loss plot saved to {save_path}")
-    
+    """
     
     
 if __name__ == "__main__":
