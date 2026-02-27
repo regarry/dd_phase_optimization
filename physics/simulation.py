@@ -1405,7 +1405,7 @@ class OpticsSimulation(nn.Module):
                         print("sum defocus bead: ", torch.sum(self.gpu_defocused_beads[abs(z.item()-self.z_depth_list[l])]))
                         
                     if self.conv3d == False:
-                        imgs3D[i, l, x_ori - self.psf_keep_radius:x_ori + self.psf_keep_radius  + 1, y - self.psf_keep_radius: y + self.psf_keep_radius + 1] += \
+                        imgs3D[i, l, y - self.psf_keep_radius: y + self.psf_keep_radius + 1, x_ori - self.psf_keep_radius:x_ori + self.psf_keep_radius + 1] += \
                             self.gpu_defocused_beads[abs(z.item()-self.z_depth_list[l])] * photons
                     
                     elif self.conv3d == True and self.Nimgs > 1:

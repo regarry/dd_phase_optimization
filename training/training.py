@@ -453,7 +453,7 @@ def main():
             save_png(slm_display_image, epoch_png_path, config)
             #savePhaseMask(slm_display_image, epoch, training_results_dir)
             
-            if epoch % 5 == 0 or epoch == config['max_epochs'] - 1 or early_stopper.early_stop:
+            if epoch % config.get('save_epoch_interval', 5) == 0 or epoch == config['max_epochs'] - 1 or early_stopper.early_stop:
                 epoch_model_path = os.path.join(training_results_dir, "models", f'net_{epoch}.pt')
                 os.makedirs(os.path.dirname(epoch_model_path), exist_ok=True)
                 torch.save(model.state_dict(), epoch_model_path)

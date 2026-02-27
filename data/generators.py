@@ -1,9 +1,6 @@
 import numpy as np
 import random
 
-import numpy as np
-import random
-
 def create_random_emitters(config):
     """
     Generates positions for ONE single image volume.
@@ -13,14 +10,20 @@ def create_random_emitters(config):
     num_particles_range = config['num_particles_range']
     
     # Handle spatial ranges (convert to list if they are [min, max] pairs)
-    spatial_xy = config['particle_spatial_range_xy']
+    spatial_x = config['particle_spatial_range_x']
+    spatial_y = config['particle_spatial_range_y']
     spatial_z = config['particle_spatial_range_z']
 
     # Helper to convert [min, max] to range object if needed
-    if isinstance(spatial_xy, (list, tuple)) and len(spatial_xy) == 2:
-        spatial_xy_list = range(int(spatial_xy[0]), int(spatial_xy[1]))
+    if isinstance(spatial_x, (list, tuple)) and len(spatial_x) == 2:
+        spatial_x_list = range(int(spatial_x[0]), int(spatial_x[1]))
     else:
-        spatial_xy_list = spatial_xy
+        spatial_x_list = spatial_x
+        
+    if isinstance(spatial_y, (list, tuple)) and len(spatial_y) == 2:
+        spatial_y_list = range(int(spatial_y[0]), int(spatial_y[1]))
+    else:
+        spatial_y_list = spatial_y
 
     if isinstance(spatial_z, (list, tuple)) and len(spatial_z) == 2:
          # Assuming z steps of 1. If step is in config, handle accordingly.
@@ -43,8 +46,8 @@ def create_random_emitters(config):
 
     # A. Z-Coupled Pairs (Vertical "Filaments")
     for _ in range(n_z_coupled // 2):
-        x = random.choice(spatial_xy_list)
-        y = random.choice(spatial_xy_list)
+        x = random.choice(spatial_x_list)
+        y = random.choice(spatial_y_list)
         z1 = random.choice(spatial_z_list)
         
         # Determine Z2
@@ -68,8 +71,8 @@ def create_random_emitters(config):
 
     # B. Remaining Random Beads
     for _ in range(n_random):
-        x = random.choice(spatial_xy_list)
-        y = random.choice(spatial_xy_list)
+        x = random.choice(spatial_x_list)
+        y = random.choice(spatial_y_list)
         z = random.choice(spatial_z_list)
         beads.append([x, y, z])
 

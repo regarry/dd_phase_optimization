@@ -217,7 +217,8 @@ def expand_config(config, training_results_dir):
 
     # 3. Set Spatial Ranges (for the generator)
     # XY: Start at radius, end at image_size - radius
-    config['particle_spatial_range_xy'] = [psf_keep_radius, image_volume[0] - psf_keep_radius]
+    config['particle_spatial_range_x'] = [psf_keep_radius, image_volume[1] - psf_keep_radius]
+    config['particle_spatial_range_y'] = [psf_keep_radius, image_volume[0] - psf_keep_radius]
 
     # Z: Center around 0. If Depth is 30, range is -15 to +15.
     z_length = image_volume[2]

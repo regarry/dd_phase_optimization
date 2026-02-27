@@ -20,8 +20,8 @@ def batch_xyz_to_boolean_grid(xyz_np, config):
         for j in range(num_particles):
             z = xyz_np[i, j, 2]
             if z_range_cost_function[0] <= z <= z_range_cost_function[1]:
-                x = xyz_np[i, j, 0]
-                y = xyz_np[i, j, 1]
+                x = xyz_np[i, j, 1]
+                y = xyz_np[i, j, 0]
                 boolean_grid[i, 0, int(x // ratio_input_output_image_size), int(y // ratio_input_output_image_size)] = 1
     boolean_grid = torch.from_numpy(boolean_grid).type(torch.FloatTensor)
     return boolean_grid
