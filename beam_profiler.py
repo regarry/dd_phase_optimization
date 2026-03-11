@@ -3,6 +3,7 @@ import argparse
 import numpy as np
 import torch
 import skimage.io
+from skimage.restoration import unwrap_phase
 import matplotlib.pyplot as plt
 #from datetime import datetime
 from data.io import load_config, normalize_to_uint16
@@ -46,7 +47,7 @@ def main():
     phase_mask_upsample_factor = config.get('phase_mask_upsample_factor', 1)
     config["phase_mask_file"] = args.mask
     asm = config.get('angular_spectrum_method', True)
-    initial_phase_mask = config.get('initial_phase_mask', "")
+    #initial_phase_mask = config.get('initial_phase_mask', "")
 
     # Get z_min, z_max, y_min, y_max, and num_z_steps from config
     z_min_mm = config.get('z_min_mm', -10.0) # Default to -10 mm if not in config
@@ -120,6 +121,9 @@ def main():
     mask_tif_path = os.path.join(output_subdir, "mask.tif")
     skimage.io.imsave(mask_tif_path, mask_np)
     
+    unwrapped_phase_mask = unwrap_phase(mask_np - np.pi, wrap_around=False)
+    unwrapped_mask_tif_path = os.path.join(output_subdir, "unwrapped_mask.tif")
+    skimage.io.imsave(unwrapped_mask_tif_path, unwrapped_phase_mask)
 
     #mask_tensor = torch.from_numpy(mask_np).type(torch.FloatTensor).to(device)
 

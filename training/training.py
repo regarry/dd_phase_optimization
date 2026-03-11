@@ -448,7 +448,8 @@ def main():
             os.makedirs(os.path.dirname(epoch_tif_path), exist_ok=True)
             os.makedirs(os.path.dirname(epoch_bmp_path), exist_ok=True)
             
-            io.imsave(epoch_tif_path, mask_param.detach().cpu().numpy().astype(np.float32))
+            #io.imsave(epoch_tif_path, mask_param.detach().cpu().numpy().astype(np.float32))
+            io.imsave(epoch_tif_path, slm_display_image)
             io.imsave(epoch_bmp_path, slm_display_image)
             save_png(slm_display_image, epoch_png_path, config)
             #savePhaseMask(slm_display_image, epoch, training_results_dir)

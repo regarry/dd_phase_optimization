@@ -12,7 +12,7 @@ if __name__ == "__main__":
     #training_folder = "./training_results/20260211-162226"
     
     training_folder = "./training_results/20260227-121828"
-    epoch = 5
+    epoch = 25
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     inference_results = os.path.join(training_folder, timestamp)
     beam_profiles = inference_results
@@ -20,7 +20,7 @@ if __name__ == "__main__":
     # Load mask from tiff file (for both models)
     mask_path_1 = Path(os.path.join(training_folder, f"mask_phase_epoch_{epoch}.tiff"))
     mask_path_2 = Path(os.path.join(training_folder, f"mask_phase_epoch_{epoch}.tif"))
-    mask_path_3 = Path(os.path.join(training_folder, "learned_phase_masks","tif",f"mask_phase_epoch_{epoch}.tif"))
+    mask_path_3 = Path(os.path.join(training_folder, "learned_phase_masks","bmp",f"mask_phase_epoch_{epoch}.bmp"))
     
     if mask_path_1.exists():
         mask_path = mask_path_1
@@ -73,6 +73,15 @@ if __name__ == "__main__":
         "--bessel_angle", "4.0" # 0.5 deg x 4
     ]
     subprocess.run(axicon_profiler_cmd, check=True)
+    
+    fresnel_lens_beam_profiles = os.path.join(inference_results, "fresnel_lens_beam_profile")
+    fresnel_profiler_cmd = [
+        "python", "beam_profiler.py",
+        "--output_dir", fresnel_lens_beam_profiles,
+        "--config", config_path,
+        "--gen_phase_mask", "fresnel_lens"
+    ]
+    subprocess.run(fresnel_profiler_cmd, check=True)
     
     fresnel_lens_beam_profiles = os.path.join(inference_results, "fresnel_lens_beam_profile")
     fresnel_profiler_cmd = [

@@ -13,6 +13,7 @@ module load conda
 module load cuda/12.3
 
 # Check GPU status
+hostname
 nvidia-smi
 #nvidia-smi topo -m
 

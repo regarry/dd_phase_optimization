@@ -2,6 +2,7 @@
 #BSUB -n 8
 #BSUB -W 2:00
 #BSUB -R "rusage[mem=32GB]"
+#BSUB -R "select[hname!='gpu16']"
 #BSUB -q short_gpu
 #BSUB -gpu "num=1:mode=shared:mps=no"
 #BSUB -J psf_inference
@@ -13,6 +14,7 @@ module load conda
 module load cuda/12.3
 
 # Check GPU status
+hostname
 nvidia-smi
 #nvidia-smi topo -m
 
