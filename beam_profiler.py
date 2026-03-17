@@ -70,7 +70,7 @@ def main():
 
     # Ensure z_step_pixels is at least 1
     z_step_pixels = max(1, z_step_pixels)
-
+    #z_step_pixels = 1
 
     # Generate or load phase mask
     # assert that either bessel_angle > 0 or args.fresnel_lens_pattern is True or args.mask is provided
@@ -172,7 +172,7 @@ def main():
         output_layer = output_layer.squeeze()
 
         print("Generating beam profile...")
-        beam_profile, intensity_profile = phys_layer.generate_beam_cross_section(
+        beam_profile, column_sums_per_image, intensities_at_z = phys_layer.generate_beam_cross_section(
             output_layer, output_subdir,
             (z_min_pixels, z_max_pixels, z_step_pixels),
             (y_min_pixels, y_max_pixels), asm = asm
@@ -183,14 +183,14 @@ def main():
         skimage.io.imsave(beam_profile_tiff_path, (beam_profile))
         print(f"Saved beam profile as TIFF to {beam_profile_tiff_path}")
         
-        intensity_tiff_path = os.path.join(output_subdir, "intensity_profile.tiff")
-        skimage.io.imsave(intensity_tiff_path, (intensity_profile))
-        print(f"Saved beam profile as TIFF to {intensity_tiff_path}")
+        column_sums_tiff_path = os.path.join(output_subdir, "column_sums.tiff")
+        skimage.io.imsave(column_sums_tiff_path, (column_sums_per_image))
+        print(f"Saved beam profile as TIFF to {column_sums_tiff_path}")
 
         # Save as PNG for easy viewing
         png_path = os.path.join(output_subdir, "beam_profile.png")
         plt.figure(figsize=(8, 10))
-        plt.imshow(normalize_to_uint16(beam_profile), cmap='hot', aspect='equal')
+        plt.imshow(normalize_to_uint16(beam_profile), cmap='hot', aspect='auto')
         plt.colorbar()
 
         # Set axis labels and ticks in mm
@@ -231,7 +231,43 @@ def main():
         )
         plt.tight_layout()
         plt.savefig(png_path)
+        plt.close()
         print(f"Saved beam profile as PNG to {png_path}")
+        
+        
+        # COLUMN IMAGE VISUALIZATION
+        column_visual_path = os.path.join(output_subdir,'column_sums_visualization_in_beam_profiler.png')
+        num_slices, num_cols = column_sums_per_image.shape
+
+        # Define the figure. 
+        # We use a ratio to keep the window size reasonable (e.g., max 10 inches)
+        fig_width = 12
+        fig_height = fig_width * (num_slices * z_step_pixels/ num_cols)
+
+        plt.figure(figsize=(fig_width, fig_height))
+        plt.rcParams.update({'font.size': 30})
+        adj_aspect =  z_step_pixels 
+        plt.imshow(column_sums_per_image, aspect=adj_aspect, cmap='viridis')
+        #plt.colorbar(label='')
+        plt.title('Beam profile collapsed in the dithering axis')
+        plt.xlabel('y(mm)')
+        plt.ylabel('z(mm)')
+        num_z_ticks = 21
+        plt.yticks(
+            ticks=np.linspace(0, len(z_range_mm)-1, num=num_z_ticks),
+            labels=[f"{z_range_mm[int(i)]:.2f}" for i in np.linspace(0, len(z_range_mm)-1, num=num_z_ticks)]
+        )
+        num_y_ticks = 5
+        # For y-axis ticks, we need to map pixel indices to mm values
+        y_tick_pixels = np.linspace(0, len(y_range_mm)-1, num=num_y_ticks)
+        y_tick_mm_labels = [f"{y_range_mm[int(j)]:.2f}" for j in y_tick_pixels]
+        plt.xticks(
+            ticks=y_tick_pixels,
+            labels=y_tick_mm_labels
+    )
+        plt.savefig(column_visual_path) # Save the plot as an image file
+        plt.close() # Close the plot to prevent it from displaying immediately in some environments
+        
 
         # save the config used for this test
         config_output_path = os.path.join(output_subdir, "config.yaml")

@@ -11,8 +11,8 @@ if __name__ == "__main__":
     #training_folder = "./training_results/800_beads_phase_model_20251021-111735"
     #training_folder = "./training_results/20260211-162226"
     
-    training_folder = "./training_results/20260227-121828"
-    epoch = 25
+    training_folder = "./training_results/20260317-124000"
+    epoch = 0
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     inference_results = os.path.join(training_folder, timestamp)
     beam_profiles = inference_results
@@ -70,7 +70,7 @@ if __name__ == "__main__":
         "--output_dir", axicon_beam_profiles,
         "--config", config_path,
         "--gen_phase_mask", "axicon",
-        "--bessel_angle", "4.0" # 0.5 deg x 4
+        "--bessel_angle", "1.6" # 0.4 deg x 4
     ]
     subprocess.run(axicon_profiler_cmd, check=True)
     
@@ -83,6 +83,7 @@ if __name__ == "__main__":
     ]
     subprocess.run(fresnel_profiler_cmd, check=True)
     
+    """
     fresnel_lens_beam_profiles = os.path.join(inference_results, "fresnel_lens_beam_profile")
     fresnel_profiler_cmd = [
         "python", "beam_profiler.py",
@@ -91,3 +92,4 @@ if __name__ == "__main__":
         "--gen_phase_mask", "fresnel_lens"
     ]
     subprocess.run(fresnel_profiler_cmd, check=True)
+    """

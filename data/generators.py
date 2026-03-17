@@ -26,10 +26,28 @@ def create_random_emitters(config):
         spatial_y_list = spatial_y
 
     if isinstance(spatial_z, (list, tuple)) and len(spatial_z) == 2:
-         # Assuming z steps of 1. If step is in config, handle accordingly.
         spatial_z_list = range(int(spatial_z[0]), int(spatial_z[1]))
     else:
         spatial_z_list = spatial_z
+
+    # --- NEW: Gaussian Z Setup ---
+    # Extract strict bounds from the list/range
+    min_z = min(spatial_z_list)
+    max_z = max(spatial_z_list)
+    
+    # Define Gaussian parameters (allow config overrides, otherwise center it)
+    # Default mu is the middle of the Z volume
+    mu = config.get('z_gaussian_mu', (min_z + max_z) / 2.0) 
+    # Default sigma ensures ~99.7% of points fall naturally within bounds (span / 6)
+    sigma = config.get('z_gaussian_sigma', (max_z - min_z) / 6.0) 
+
+    def get_gaussian_z():
+        """Helper to sample a Z coordinate from a truncated Gaussian."""
+        while True:
+            z = int(round(np.random.normal(mu, sigma)))
+            if min_z <= z <= max_z:
+                return z
+    # ------------------------------
 
     z_coupled_ratio = config.get('z_coupled_ratio', 0.0)
     z_coupled_spacing = config.get('z_coupled_spacing_range', None)
@@ -48,10 +66,12 @@ def create_random_emitters(config):
     for _ in range(n_z_coupled // 2):
         x = random.choice(spatial_x_list)
         y = random.choice(spatial_y_list)
-        z1 = random.choice(spatial_z_list)
+        
+        # Determine Z1 using Gaussian distribution
+        z1 = get_gaussian_z()
         
         # Determine Z2
-        z2 = random.choice(spatial_z_list) # Fallback
+        z2 = get_gaussian_z() # Fallback also uses Gaussian to stay consistent
         
         if z_coupled_spacing is not None:
             min_s, max_s = z_coupled_spacing
@@ -63,7 +83,9 @@ def create_random_emitters(config):
                 z2 = z1 + spacing
                 
                 # Add the "Connector" beads (points strictly between z1 and z2)
-                for u in range(z1 + 1, z2):
+                # Ensure the step direction is correct if spacing can be negative
+                step = 1 if z2 > z1 else -1
+                for u in range(z1 + step, z2, step):
                     between_beads.append([x, y, u])
 
         beads.append([x, y, z1])
@@ -73,18 +95,15 @@ def create_random_emitters(config):
     for _ in range(n_random):
         x = random.choice(spatial_x_list)
         y = random.choice(spatial_y_list)
-        z = random.choice(spatial_z_list)
+        # Random beads now follow the Gaussian Z distribution
+        z = get_gaussian_z()
         beads.append([x, y, z])
 
     random.shuffle(beads)
     
     # Return as numpy arrays
-    # Beads: (N, 3)
-    # Between: (M, 3) or None
-    beads_np = np.array(beads)
-    
-    if len(between_beads) > 0:
-        between_np = np.array(between_beads)
+    beads_np = np.array(beads) if len(beads) > 0 else np.array([])
+    between_np = np.array(between_beads) if len(between_beads) > 0 else np.array([])
         
     return beads_np, between_np
 

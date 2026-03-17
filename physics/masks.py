@@ -7,12 +7,14 @@ import os
 from .bessel import generate_axicon_phase_mask
 from data.io import load_tiff # Reuse your robust IO
 
+import numpy as np
+
 def get_initial_phase_mask(config):
     """
     Factory function to generate the initial phase mask based on config.
     Returns a float32 numpy array of shape (H, W).
     """
-    mode = config.get('initial_phase_mask', 'empty')
+    mode = config.get('initial_phase_mask', 'empty').lower()
     size = config['phase_mask_pixel_size']
     slm_px = config['slm_px'] # in meters
     
@@ -20,7 +22,6 @@ def get_initial_phase_mask(config):
     if mode == "axicon":
         # Ensure parameters exist
         angle = config.get('bessel_half_cone_angle_degrees', 1.0)
-        #px_m = slm_px # config['slm_px'] should already be in meters from main() correction
         wavelength_m = config['wavelength'] # already in meters
         
         print(f"Initializing with Axicon (Angle: {angle}°)...")
@@ -30,6 +31,8 @@ def get_initial_phase_mask(config):
             wavelength_m * 1e9, # bessel function expects nm
             angle
         )
+        
+    # 2. Spherical Lens
     elif mode == "lens":
         print("Initializing with Lens Phase Mask...")
         # Simple quadratic lens phase profile
@@ -41,18 +44,55 @@ def get_initial_phase_mask(config):
         k = 2 * np.pi / wavelength_nm # wavenumber in nm^-1
         lens_phase = (k / (2 * focal_length_mm * 1e3)) * (X**2 + Y**2) # Quadratic phase
         return lens_phase.astype(np.float32)
-    # 2. Flat / Empty initialization
+
+    # 3. Cylindrical Lens
+    elif mode == "cylinder":
+        print("Initializing with Cylindrical Lens Phase Mask...")
+        # Focuses light in only one dimension (x or y)
+        x = np.linspace(-size//2, size//2 - 1, size) * slm_px * 1e6 # in microns
+        y = np.linspace(-size//2, size//2 - 1, size) * slm_px * 1e6 # in microns
+        X, Y = np.meshgrid(x, y)
+        
+        # Use a specific cylinder focal length, or fall back to lenless_prop_distance
+        focal_length_mm = config.get('cylinder_focal_length_mm', config.get('lenless_prop_distance', 0.1) * 1e3) 
+        wavelength_nm = config['wavelength'] * 1e9 # in nm
+        k = 2 * np.pi / wavelength_nm # wavenumber in nm^-1
+        
+        axis = config.get('cylinder_axis', 'x').lower()
+        if axis == 'x':
+            cylinder_phase = (k / (2 * focal_length_mm * 1e3)) * (X**2)
+        elif axis == 'y':
+            cylinder_phase = (k / (2 * focal_length_mm * 1e3)) * (Y**2)
+        else:
+            raise ValueError("cylinder_axis in config must be 'x' or 'y'")
+            
+        return cylinder_phase.astype(np.float32)
+
+    # 4. Airy Beam (Cubic Phase Mask)
+    elif mode in ["air", "airy"]:
+        print("Initializing with Airy (Cubic) Phase Mask...")
+        # Generates an Airy beam using a 2D cubic phase profile: alpha * (x^3 + y^3)
+        x = np.linspace(-size//2, size//2 - 1, size) * slm_px * 1e6 # in microns
+        y = np.linspace(-size//2, size//2 - 1, size) * slm_px * 1e6 # in microns
+        X, Y = np.meshgrid(x, y)
+        
+        # alpha controls the trajectory/bending rate of the beam
+        alpha = config.get('airy_alpha', 1e-4)
+        airy_phase = alpha * (X**3 + Y**3)
+        return airy_phase.astype(np.float32)
+
+    # 5. Flat / Empty initialization
     elif mode == "empty":
         print("Initializing with Flat (Zero) mask...")
         return np.zeros((size, size), dtype=np.float32)
 
-    # 3. Random Noise initialization
+    # 6. Random Noise initialization
     elif mode == "random":
         print("Initializing with Random Noise...")
         # Random phase between 0 and 2pi
         return np.random.rand(size, size).astype(np.float32) * 2 * np.pi
 
-    # 4. Load from File
+    # 7. Load from File
     elif mode == "file":
         path = config.get('phase_mask_file')
         if not path:
@@ -61,12 +101,11 @@ def get_initial_phase_mask(config):
         print(f"Initializing from file: {path}...")
         
         # Use our robust loader (handles checks and errors)
-        mask = load_tiff(path)
+        mask = load_tiff(path) # Ensure load_tiff is defined in your broader scope
         
         # Safety check for dimensions
         if mask.shape != (size, size):
             print(f"⚠️ Warning: Loaded mask shape {mask.shape} != config size ({size}, {size}). Resizing may occur in model.")
-            # Optional: Add resize logic here if strictness is required
             
         return mask.astype(np.float32)
 

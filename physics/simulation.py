@@ -1237,7 +1237,7 @@ class OpticsSimulation(nn.Module):
             # Extract the central 1D slice along the y-axis
             center_row_idx = intensity_at_z[i].shape[0] // 2
             center_col_idx = intensity_at_z[i].shape[1] // 2
-            cross_section_profile[i,:] = intensity_at_z[i][ center_row_idx, center_col_idx + y_min_px : center_col_idx + y_max_px]
+            cross_section_profile[i,:] = intensity_at_z[i][center_row_idx, center_col_idx + y_min_px : center_col_idx + y_max_px]
             
         
         # normalize intensity_at_z to uint16
@@ -1267,33 +1267,47 @@ class OpticsSimulation(nn.Module):
             """
             if P.ndim != 3:
                 raise ValueError("Input array P must be 3-dimensional (num_images, height, width).")
-            if P.shape[1] != 2048 or P.shape[2] != 2048:
-                print(f"Warning: Expected image dimensions of 2048x2048, but got {P.shape[1]}x{P.shape[2]}.")
-
+            
             # Sum columns for each image.
-            # Axis=2 refers to the column dimension in a (num_images, rows, columns) array.
             # Using uint32 to prevent potential overflow as sums can exceed uint16 max.
-            column_sums_per_image = np.sum(P, axis=1, dtype=np.uint32)
+            column_sums_per_image_32 = np.sum(P, axis=1, dtype=np.uint32)
+            def cast_to_uint16(arr):
+                # 1. Normalize the data to the 0.0 - 1.0 range
+                # We use floats temporarily to avoid rounding errors during division
+                p_min = arr.min()
+                p_max = arr.max()
+
+                # Avoid division by zero if the image is blank
+                if p_max - p_min > 0:
+                    normalized = (arr - p_min) / (p_max - p_min)
+                else:
+                    normalized = arr
+
+                # 2. Scale to 16-bit range (0 - 65535) and cast
+                image_16bit = (normalized * 65535).astype(np.uint16)
+                return image_16bit
+            
+            column_sums_per_image_16 = cast_to_uint16(column_sums_per_image_32)
             column_visual_path = os.path.join(output_folder,'column_sums_visualization.png')
             # Visualize the new "image"
             plt.figure(figsize=(12, 6))
-            plt.imshow(column_sums_per_image, aspect='auto', cmap='viridis')
-            plt.colorbar(label='Summed Column Value')
-            plt.title('Column Sums for Each Image (New "Image")')
-            plt.xlabel('Column Index')
-            plt.ylabel('Original Image Index')
+            plt.imshow(column_sums_per_image_16, aspect='auto', cmap='viridis')
+            plt.colorbar(label='')
+            plt.title('Beam profile collapsed in the dithering axis')
+            plt.xlabel('y(mm)')
+            plt.ylabel('z(mm)')
             plt.savefig(column_visual_path) # Save the plot as an image file
             plt.close() # Close the plot to prevent it from displaying immediately in some environments
 
-            return column_sums_per_image
+            return column_sums_per_image_16
         
-        column_sums_image = visualize_column_sums(intensity_at_z, output_folder)
+        column_sums_image = visualize_column_sums(intensity_at_z[:,:,center_col_idx + y_min_px : center_col_idx + y_max_px], output_folder)
     
         # save cross_section_profile as tiff in 32 bit float format
         #cross_section_save_path = os.path.join(output_folder, 'cross_section_profile.tiff')
         #skimage.io.imsave(cross_section_save_path, cross_section_profile.astype(np.float32))
         print("Cross-section generation complete.")
-        return cross_section_profile, column_sums_image
+        return cross_section_profile, column_sums_image, intensity_at_z
 
     @staticmethod
     def expand_matrix_kron_torch(matrix, scale_factor):

@@ -201,7 +201,7 @@ def main():
         model_path_2 = Path(os.path.join(args.input_dir, model_file))
         if model_path_1.exists():
             args.model_path = model_path_1
-        elif mask_path_2.exists():
+        elif model_path_2.exists():
             args.model_path = model_path_2
         #args.model_path = os.path.join(args.input_dir, "models", model_file)
         print(f"Automatically using CNN model: {args.model_path}")
