@@ -1,11 +1,12 @@
 # ==========================================
 # 5. BEAD & SAMPLE GENERATION
 # ==========================================
-num_particles_range: [649, 650] # [min, max] emitters per image. Strong GPU: [450, 550]
+num_particles_range: [1849, 1850] # [min, max] emitters per image. Strong GPU: [450, 550]
 bead_radius: 0.5          # pixels 1.0 default
 z_coupled_ratio: 0.5
 z_coupled_spacing_range: [1, 5] # need to change the code so that the z coupled beads are only generated around the in focus plane
-
+z_gaussian_mu: 0.0
+#z_gaussian_sigma:
 
 # ==========================================
 # 1. OPTIMIZATION & TRAINING LOOP
@@ -65,7 +66,7 @@ pad_4f: False                 # Whether to pad the field during 4f simulation to
 # ==========================================
 slm_px: 1.00e-6 # 0.1625e-6             # Physical pixel size of the SLM [m]
 phase_mask_pixel_size: 1024 # Number of pixels on the SLM side (resolution)
-initial_phase_mask: "empty"
+initial_phase_mask: "random"
 bessel_half_cone_angle_degrees: 3.2
 airy_alpha: 1.0e-4 #Controls the cubic strength and dictates the "bending" trajectory of the Airy beam.
 cylinder_axis: "x" # axis of the cylindrical lens if using cylindrical phase mask (x or y)
@@ -76,7 +77,7 @@ phase_mask_upsample_factor: 1 # Scale factor for phase mask upsampling (simulati
 # ==========================================
 
 # ***************** want to change this to input meters not px?
-image_volume: [64, 1024, 512] # the first two dimensions should be powers of 2 for the u-net [y, x, z] volume of imaging in px (camera coordinates)
+image_volume: [48, 1024, 256] # the first two dimensions should be powers of 2 for the u-net [y, x, z] volume of imaging in px (camera coordinates)
 ratio_input_output_image_size: 1 # default with Unet 1, with ResNet 4
 
 # ==========================================
@@ -99,9 +100,9 @@ num_z_steps: 200           # Simulation steps/planes across the z-range
 # ==========================================
 # 7. CAMERA & NOISE MODEL
 # ==========================================
-quantum_efficiency: 0.82   # (0-1)
-dark_current_mean: 0.05    # Mean dark current electrons per pixel
-read_noise_std: 1.4        # Read noise std dev in electrons RMS
+quantum_efficiency: 0.6   # (0-1)
+dark_current_mean: 1.2    # Mean dark current electrons per pixel
+read_noise_std: 5.5        # Read noise std dev in electrons RMS
 camera_gain: 0.46           # Electrons per ADU
 camera_max_adu: 65535      # 16-bit depth
 robust_max_percentile: 0.999 # percentile for robust max calculation for normalization of simulated images

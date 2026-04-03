@@ -1,10 +1,10 @@
 #!/bin/bash
-#BSUB -n 8
-#BSUB -W 20160
-#BSUB -R "rusage[mem=32GB]"
-#BSUB -q bme_gpu
-#BSUB -gpu "num=1:mode=shared:mps=yes"
-##BSUB -R "select[hname!=gpu18]"
+#BSUB -n 4
+#BSUB -W 2:00
+#BSUB -R "rusage[mem=4GB]"
+#BSUB -q short_gpu
+#BSUB -gpu "num=1:mode=exclusive_process:mps=yes"
+#BSUB -R "select[h200]"
 #BSUB -J train_dd
 #BSUB -o ./logs/.%J
 #BSUB -e ./logs/.%J
