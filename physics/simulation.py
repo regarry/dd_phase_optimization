@@ -767,7 +767,7 @@ class OpticsSimulation(nn.Module):
                     
         return is_safe
      
-    def angular_spectrum_propagation(self, input_field, z, pad=True, debug=False):
+    def angular_spectrum_propagation(self, input_field, z, pad=True, debug=False, r_pinhole = None):
         """
         ASM propagation.
         Args:
@@ -795,9 +795,11 @@ class OpticsSimulation(nn.Module):
         # Ensure these are broadcastable against batch_dims if needed
         if pad:
             gamma = self.gamma_padded
+            grid_size = (2 * self.N, 2 * self.N)
             #mask = self.evanescent_mask_padded
         else:
             gamma = self.gamma_unpadded
+            grid_size = (self.N, self.N)
             #mask = self.evanescent_mask_unpadded
 
         # 3. Create Transfer Function
@@ -807,7 +809,23 @@ class OpticsSimulation(nn.Module):
         # H = exp(j * k_medium * gamma * z) * mask
         # Ensure self.k includes refractive index: k = 2*pi*n/lambda_0
         phase = 1j * self.k * gamma * prop_dist
-        H = torch.exp(phase) #* mask
+        if r_pinhole is not None:
+            ny, nx = grid_size
+
+            # 1. Generate frequency coordinates directly in standard FFT order
+            #    fftfreq returns: [0, 1, ..., N/2-1, -N/2, ..., -1] / (d*N)
+            #    This matches the output of fft2 without needing ifftshift later.
+            fx = torch.fft.fftfreq(nx, d=self.px, device=self.device)
+            fy = torch.fft.fftfreq(ny, d=self.px, device=self.device)
+        
+            # 2. Create Meshgrid (unshifted)
+            FX, FY = torch.meshgrid(fx, fy, indexing='xy')
+            f_max = (r_pinhole * self.focal_length_3) / (self.wavelength * self.focal_length_2 * self.focal_length_4)
+            F_radius = torch.sqrt(FX**2 + FY**2)
+            H_LP = (F_radius <= f_max).float()
+            H = torch.exp(phase) * H_LP
+        else:
+            H = torch.exp(phase) #* mask
 
         # if debug:
         #     # Visualization logic (using fftshift for human readability)
@@ -1036,7 +1054,7 @@ class OpticsSimulation(nn.Module):
         Ta = torch.exp(1j * phase_mask) # amplitude transmittance (in our case the slm reflectance)
         Ta = Ta[None, None, :]
         if self.aperature:
-            safe_radius_px = 2*get_max_aperture_radius_pixels(self.wavelength, self.lensless_prop_distance, self.slm_px)
+            safe_radius_px = 2 * get_max_aperture_radius_pixels(self.wavelength, self.lensless_prop_distance, self.slm_px)
             print(f"Applying aperture with radius: {safe_radius_px:.1f} pixels") 
             # For your setup, this will output ~477.6 pixels
 
@@ -1048,7 +1066,12 @@ class OpticsSimulation(nn.Module):
             aperature  = torch.ones_like(self.incident_gaussian)
         Uo = self.incident_gaussian * Ta * aperature # light directly behind the SLM (or in our case reflected from the SLM)
         if self.config['angular_spectrum_method'] == True:
-            output_layer = self.angular_spectrum_propagation(Uo, self.lensless_prop_distance/self.px, pad=True, debug = self.debug_asm) # infront of lens
+            r_pinhole = self.config.get("lowpass_pinhole_radius_mm", 0) * 1e-3  # Convert mm to meters) # infront of lens
+            if  r_pinhole > 0:
+                print("Applying low-pass pinhole filter in the Fourier domain.")
+                output_layer = self.angular_spectrum_propagation(Uo, self.lensless_prop_distance/self.px, pad=True, debug = self.debug_asm, r_pinhole = r_pinhole)
+            else:
+                output_layer = self.angular_spectrum_propagation(Uo, self.lensless_prop_distance/self.px, pad=True, debug = self.debug_asm)
         else:
             output_layer = self.fresnel_propagation(Uo, self.lensless_prop_distance/self.px) # infront of lens
         return output_layer

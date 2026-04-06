@@ -141,8 +141,8 @@ def main():
     config['inference_epoch'] = args.epoch
     
     # Create output directory for inference results using current datetime.
-    dt_str = datetime.now().strftime("%Y%m%d-%H%M%S")
-    out_dir = os.path.join(args.res_dir, "inference", dt_str)
+    #dt_str = datetime.now().strftime("%Y%m%d-%H%M%S")
+    out_dir = os.path.join(args.res_dir, "inference")
     makedirs(out_dir)
     
     if args.plot_loss:

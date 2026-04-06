@@ -3,7 +3,7 @@
 #BSUB -W 2:00
 #BSUB -R "rusage[mem=4GB]"
 #BSUB -q short_gpu
-#BSUB -gpu "num=1:mode=exclusive_process:mps=yes"
+#BSUB -gpu "num=2:mode=exclusive_process:mps=yes"
 #BSUB -R "select[h200]"
 #BSUB -J train_dd
 #BSUB -o ./logs/.%J
