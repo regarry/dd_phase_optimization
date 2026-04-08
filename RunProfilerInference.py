@@ -12,7 +12,7 @@ if __name__ == "__main__":
     #training_folder = "./training_results/20260211-162226"
     
     training_folder = "./training_results/20260408-122219"
-    epoch = 0
+    epoch = 3
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     inference_results = os.path.join(training_folder, timestamp)
     beam_profiles = inference_results

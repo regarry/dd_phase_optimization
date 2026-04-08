@@ -1,11 +1,11 @@
 #!/bin/bash
-#BSUB -n 8
-#BSUB -W 2:00
-#BSUB -R "rusage[mem=32GB]"
-#BSUB -R "select[hname!='gpu16']"
+#BSUB -n 2
+#BSUB -W 1:00
+#BSUB -R "rusage[mem=4GB]"
+##BSUB -R "select[hname!='gpu16']"
 #BSUB -q short_gpu
 #BSUB -gpu "num=1:mode=shared:mps=no"
-#BSUB -J psf_inference
+#BSUB -J inference
 #BSUB -o ./logs/.%J
 #BSUB -e ./logs/.%J
 

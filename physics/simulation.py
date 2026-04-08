@@ -700,8 +700,7 @@ class OpticsSimulation(nn.Module):
 
         return mask
     
-    @staticmethod
-    def _visualize_step(title, tensor):
+    def _visualize_step(self,title, tensor):
         arr = tensor.cpu().detach().numpy()
         plt.figure(figsize=(12, 5))
         plt.subplot(1, 2, 1)
@@ -715,7 +714,8 @@ class OpticsSimulation(nn.Module):
         plt.tight_layout()
         # save the figure
         dtm = datetime.now().strftime("%Y%m%d-%H%M%S")
-        plt.savefig(f"{title}_{dtm}.png")
+        fig_path = os.path.join(self.config.get('training_results_dir', "./"),f"{title}_{dtm}.png")
+        plt.savefig(fig_path)
         plt.show(block=False)
         
     @staticmethod
@@ -842,10 +842,11 @@ class OpticsSimulation(nn.Module):
         U_prime = fft_field * H
         if debug:
             # save the figure
-            self._visualize_step("H_LP", H_LP)
-            self._visualize_step("H", H)
-            self._visualize_step("fft_field", fft_field[0][0])
-            self._visualize_step("U_prime", U_prime[0][0])
+            if r_pinhole is not None:
+                self._visualize_step("H_LP", torch.fft.fftshift(H_LP))
+            self._visualize_step("H", torch.fft.fftshift(H))
+            self._visualize_step("fft_field", torch.fft.fftshift(fft_field[0][0]))
+            self._visualize_step("U_prime", torch.fft.fftshift(U_prime[0][0]))
         output_padded = torch.fft.ifft2(U_prime)
 
         # 5. Crop
