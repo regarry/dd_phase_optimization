@@ -1,5 +1,16 @@
 import numpy as np
 import torch
+import torch.nn.functional as F
+
+
+
+def batch_xyz_to_ideal_image(psf_kernel, xyz_np, config):
+    boolean_grid = batch_xyz_to_boolean_grid(xyz_np, config)
+    # convolve boolean grid with ideal psf to get ideal image
+    # 1. Reshape kernel to (1, 1, k, k) for conv2d compatibility
+    kernel = psf_kernel.unsqueeze(0).unsqueeze(0)  # Shape: (1, 1, k, k)
+    ideal_image = F.conv2d(boolean_grid, kernel)
+    return ideal_image
 
 def batch_xyz_to_boolean_grid(xyz_np, config):
 

@@ -240,6 +240,7 @@ def expand_config(config, training_results_dir):
         if z_coupled_ratio <= 0 or z_coupled_spacing[0] <= 0:
              raise ValueError("For multi-class, you must set z_coupled_ratio > 0 and z_coupled_spacing_range.")
 
+    config['defocused_beads_filename'] = config.get('defocused_beads_filename', 'defocused_beads.mat')
     return config
 
 def load_tiff_sequence(data_path):

@@ -204,7 +204,7 @@ def generate_bead_defocus_stack(config, results_dir, setup_defocus_psf=None):
     defocused_beads_np = np.array(defocused_beads)    
     print("Bead stack generation complete.")
     # Save 3D stack
-    defocused_bead_stack_path = os.path.join(results_dir, 'defocused_beads.mat')
+    defocused_bead_stack_path = os.path.join(results_dir, config.get('defocused_beads_filename'))
     sio.savemat(defocused_bead_stack_path, {'defocus_beads': defocused_beads_np})
     print(f"Defocused bead stack saved to {defocused_bead_stack_path}")
     return defocused_beads_np

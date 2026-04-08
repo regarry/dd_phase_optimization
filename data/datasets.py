@@ -1,8 +1,10 @@
 import torch
 import numpy as np
 from torch.utils.data import Dataset
+import scipy.io as sio
+import os
 from .generators import create_random_emitters
-from .transforms import batch_xyz_to_boolean_grid, batch_xyz_to_3_class_grid
+from .transforms import batch_xyz_to_boolean_grid, batch_xyz_to_3_class_grid, batch_xyz_to_ideal_image
 
 class SyntheticMicroscopeData(Dataset):
     def __init__(self, epoch_length, config):
@@ -31,8 +33,15 @@ class SyntheticMicroscopeData(Dataset):
              target = batch_xyz_to_3_class_grid(xyz_batch, between_batch, self.config)
         else:
              # Standard Binary Case
-             target = batch_xyz_to_boolean_grid(xyz_batch, self.config)
-
+             if self.config.get('mse_loss', False):
+                defocused_bead_stack_path = os.path.join(self.config['training_results_dir'], self.config.get('defocused_beads_filename'))
+                # how to load the mat file made with sio.savemat(defocused_bead_stack_path, {'defocus_beads': defocused_beads_np})
+                ideal_psf = sio.loadmat(defocused_bead_stack_path)['defocus_beads'][0]
+                #convert to torch tensor
+                ideal_psf = torch.from_numpy(ideal_psf).float()
+                target = batch_xyz_to_ideal_image(ideal_psf, xyz_batch, self.config)
+             else:
+                target = batch_xyz_to_boolean_grid(xyz_batch, self.config)
         # 3. CLEANUP
         # Remove the fake batch dimension so the DataLoader can stack them properly later.
         # Target shape goes from (1, Channels, H, W) -> (Channels, H, W)

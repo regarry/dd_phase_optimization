@@ -25,80 +25,81 @@ from utils.debug import MemorySnapshot, print_all_gpu_stats
 from physics.masks import get_initial_phase_mask
 from physics.simulation import TotalVariationLoss, apply_8bit_physics
 
-def train_one_epoch(model, dataloader, optimizer, criterion_ce, criterion_dice, tv_loss, mask_param, config, epoch):
+def compute_total_loss(outputs, targets, physical_slm_phase, config, loss_funcs):
     """
-    Runs one epoch of training.
-    model: The ParallelEndToEndModel (Wrapper on CPU)
+    Helper function to dynamically compute and sum all active losses.
     """
-    model.train() # Sets sub-modules (UNet/Physics) to train mode
-    
+    # 1. Base criteria losses (e.g., MSE, L1, etc.)
+    # Ensure targets are float and shapes match for regression losses like MSE
+    targets = targets.float()
+    if targets.shape != outputs.shape:
+        # Attempt to reshape targets to match outputs if there's a channel dimension mismatch
+        targets = targets.view_as(outputs)
+
+    loss_dict = {}
     total_loss = 0.0
-    # The Wrapper expects inputs on the Main Device (usually cuda:0)
-    # It will handle splitting to cuda:1, cuda:2 internally.
+
+    # Dynamically calculate any standard loss passed in the dictionary
+    for loss_name, criterion in loss_funcs.items():
+        if loss_name == 'tv_loss':
+            # TV loss applies to the phase mask, not the outputs
+            val = criterion(physical_slm_phase)
+        else:
+            # Standard losses apply to outputs and targets
+            val = criterion(outputs, targets)
+        
+        weight = config.get(f'{loss_name}_weight', 1.0)
+        loss_dict[loss_name] = val * weight
+        total_loss += loss_dict[loss_name]
+
+    # 2. Out-of-Focus (OOF) Light Penalty (Custom logic)
+    oof_weight = config.get('oof_loss_weight', 0.0)
+    if oof_weight > 0.0:
+        if targets.dim() == 4:
+            bead_mask = (targets > 0).float()
+        else:
+            bead_mask = (targets > 0).float().unsqueeze(1)
+
+        oof_mask = 1.0 - bead_mask
+        
+        if config.get('num_classes', 1) > 1:
+            probs = torch.softmax(outputs, dim=1)
+            oof_intensity = (probs[:, 1:, :, :] * oof_mask).sum()
+        else:
+            # If you output raw values for MSE, you might want to clamp or normalize 
+            # this instead of sigmoid, depending on your physics model.
+            probs = torch.sigmoid(outputs) 
+            oof_intensity = (probs * oof_mask).sum()
+
+        oof_loss_val = oof_weight * oof_intensity / outputs.numel()
+        loss_dict['oof_loss'] = oof_loss_val
+        total_loss += oof_loss_val
+
+    return total_loss, loss_dict
+
+
+def train_one_epoch(model, dataloader, optimizer, loss_funcs, mask_param, config, epoch):
+    """
+    Runs one epoch of training using dynamic loss functions.
+    loss_funcs: dict of standard PyTorch loss functions, e.g., {'mse': nn.MSELoss(), 'tv_loss': TVLoss()}
+    """
+    model.train()
+    total_loss = 0.0
     main_device = torch.device(config.get('cnn_device', 'cuda:0'))
     grad_accum = config.get('gradient_accumulation_steps', 32)
     
     for batch_idx, (bead_xyz_list, targets) in enumerate(dataloader):
-        # ---------------------------------------------------------
-        # 1. MOVE DATA TO MAIN GPU
-        # ---------------------------------------------------------
-        # xyz shape from loader: (Batch, N_emitters, 3)
-        # targets shape from loader: (Batch, Channels, H, W)
         bead_xyz_list = bead_xyz_list.to(main_device)
         targets = targets.to(main_device)
         
-        # Handle target dimensions (CrossEntropy expects specific shapes)
-        if config['num_classes'] > 1:
-            # If (Batch, 1, H, W), squeeze to (Batch, H, W) for CrossEntropy
-            if targets.dim() == 4 and targets.shape[1] == 1:
-                targets = targets.squeeze(1).long()
-        else:
-             # For BCE, we usually want (Batch, 1, H, W) or (Batch, H, W) depending on implementation
-             pass
         # 1. APPLY HARDWARE PHYSICS
-        # mask_param is continuous and unbounded.
-        # physical_slm_phase is strictly 8-bit quantized.
         physical_slm_phase = apply_8bit_physics(mask_param)
-        # ---------------------------------------------------------
-        # 2. FORWARD PASS (Through Parallel Wrapper)
-        # ---------------------------------------------------------
-        # Wrapper acts as traffic controller.
+        
+        # 2. FORWARD PASS
         outputs = model(physical_slm_phase, bead_xyz_list)
         
-        # ---------------------------------------------------------
         # 3. LOSS & OPTIMIZATION
-        # ---------------------------------------------------------
-        criterion_ce_loss = criterion_ce(outputs, targets)
-        criterion_dice_loss = criterion_dice(outputs, targets)
-        total_variation_loss = tv_loss(physical_slm_phase)
-        oof_loss = 0.0
-        if config.get('oof_loss_weight', 0.0) > 0.0:
-            # Out-of-Focus (OOF) Light Penalty
-            # Assume targets shape: (Batch, Channels, H, W) or (Batch, H, W)
-            # outputs shape: (Batch, Channels, H, W) or (Batch, H, W)
-            # Bead mask: 1 inside bead volume, 0 outside
-            if targets.dim() == 4:
-                # (Batch, 1, H, W) or (Batch, C, H, W)
-                bead_mask = (targets > 0).float()  # 1 where bead exists
-            else:
-                bead_mask = (targets > 0).float().unsqueeze(1)  # (Batch, 1, H, W)
-
-            # Sum intensity outside bead region
-            oof_mask = 1.0 - bead_mask
-            # outputs may be logits; use sigmoid if BCE, softmax if CE
-            if config['num_classes'] > 1:
-                # For multi-class, sum all non-background classes
-                probs = torch.softmax(outputs, dim=1)
-                # Assume class 0 is background, penalize all others outside bead
-                oof_intensity = (probs[:, 1:, :, :] * oof_mask).sum()
-            else:
-                probs = torch.sigmoid(outputs)
-                oof_intensity = (probs * oof_mask).sum()
-
-            oof_weight = config.get('oof_loss_weight', 1.0)
-            oof_loss = oof_weight * oof_intensity / outputs.numel()
-
-        loss = criterion_ce_loss + total_variation_loss + oof_loss + criterion_dice_loss
+        loss, _ = compute_total_loss(outputs, targets, physical_slm_phase, config, loss_funcs)
         
         loss.backward()
         
@@ -107,88 +108,31 @@ def train_one_epoch(model, dataloader, optimizer, criterion_ce, criterion_dice, 
             optimizer.zero_grad()
             
         total_loss += loss.item()
-        
-        # if batch_idx % 10 == 0:
-        #     pass
-        #     #print(f"Epoch [{epoch+1}], Step [{batch_idx+1}], Loss: {loss.item():.4f}")
             
     return total_loss / len(dataloader)
 
-def validate_one_epoch(model, dataloader, criterion_ce, criterion_dice, tv_loss, mask_param, config, epoch):
+
+def validate_one_epoch(model, dataloader, loss_funcs, mask_param, config, epoch):
     """
-    Runs one epoch of validation.
+    Runs one epoch of validation using dynamic loss functions.
     """
-    model.eval() # Set model to evaluation mode
-    
+    model.eval()
     total_loss = 0.0
     main_device = torch.device(config.get('cnn_device', 'cuda:0'))
     
-    # Disable gradient calculation for validation
     with torch.no_grad():
-        # 1. APPLY HARDWARE PHYSICS
-        # mask_param is continuous and unbounded.
-        # physical_slm_phase is strictly 8-bit quantized.
         physical_slm_phase = apply_8bit_physics(mask_param)
         
-        # We include TV loss in validation so the number compares 1:1 with training loss
-        total_variation_loss = tv_loss(physical_slm_phase)
         for batch_idx, (bead_xyz_list, targets) in enumerate(dataloader):
-            # ---------------------------------------------------------
-            # 1. MOVE DATA TO MAIN GPU
-            # ---------------------------------------------------------
             bead_xyz_list = bead_xyz_list.to(main_device)
             targets = targets.to(main_device)
             
-            # Handle target dimensions (Mirroring training logic)
-            if config['num_classes'] > 1:
-                if targets.dim() == 4 and targets.shape[1] == 1:
-                    targets = targets.squeeze(1).long()
-            else:
-                pass
+            # FORWARD PASS
+            outputs = model(physical_slm_phase, bead_xyz_list)
             
-            
-            # ---------------------------------------------------------
-            # 2. FORWARD PASS
-            # ---------------------------------------------------------
-            logits = model(physical_slm_phase, bead_xyz_list)
-            
-            # ---------------------------------------------------------
-            # 3. LOSS CALCULATION
-            # ---------------------------------------------------------
-            criterion_ce_loss = criterion_ce(logits, targets)
-            criterion_dice_loss = criterion_dice(logits, targets)
-            
-            
-            
-            oof_loss = 0.0
-            if config.get('oof_loss_weight', 0.0) > 0.0:
-                # Re-using your exact OOF logic
-                if targets.dim() == 4:
-                    bead_mask = (targets > 0).float()
-                else:
-                    bead_mask = (targets > 0).float().unsqueeze(1)
-
-                oof_mask = 1.0 - bead_mask
-                
-                if config['num_classes'] > 1:
-                    probs = torch.softmax(logits, dim=1)
-                    oof_intensity = (probs[:, 1:, :, :] * oof_mask).sum()
-                else:
-                    probs = torch.sigmoid(logits)
-                    oof_intensity = (probs * oof_mask).sum()
-
-                oof_weight = config.get('oof_loss_weight', 0.0)
-                oof_loss = oof_weight * oof_intensity / logits.numel()
-
-            # Sum all losses
-            loss = criterion_ce_loss + criterion_dice_loss + total_variation_loss + oof_loss
-            
+            # LOSS CALCULATION
+            loss, _ = compute_total_loss(outputs, targets, physical_slm_phase, config, loss_funcs)
             total_loss += loss.item()
-            
-            # Optional: Print less frequently during validation
-            if batch_idx % 10 == 0:
-                pass
-                #print(f"Val Epoch [{epoch+1}], Step [{batch_idx+1}], Loss: {loss.item():.4f}")
 
     avg_loss = total_loss / len(dataloader)
     print(f"==> Validation Epoch {epoch+1} Complete. Avg Loss: {avg_loss:.4f}")
@@ -348,15 +292,21 @@ def main():
     )
     
     # Loss setup
+    criterion_dict = {}
     if config['num_classes'] == 3:
         weights = torch.tensor(config.get('weights', [1,1,1])).float().to(main_device)
         criterion_ce = nn.CrossEntropyLoss(weight=weights)
         print("Using MultiClassDiceLoss for 3-class segmentation.")
         criterion_dice = MultiClassDiceLoss()
     elif config['num_classes'] == 1:
-        criterion_ce = nn.BCEWithLogitsLoss()
-        print("Using standard Dice Loss for binary segmentation.")
-        criterion_dice = BinaryDiceLoss()  
+        if config.get('mse_loss', False):
+            criterion_mse = nn.MSELoss()
+            criterion_dict = {'mse_loss': criterion_mse}
+            print("Using MSE Loss for regression to ideal image.")
+        else:
+            criterion_ce = nn.BCEWithLogitsLoss()
+            criterion_dice = BinaryDiceLoss() 
+            criterion_dict = {'bce_loss': criterion_ce, 'dice_loss': criterion_dice}
     else:
         raise ValueError("Unsupported number of classes. Only 1 (binary) or 3 (multi-class) are supported.")
     
@@ -393,10 +343,10 @@ def main():
     val_losses = []
     with MemorySnapshot(os.path.join(training_results_dir, "crash_snapshot.pickle")) as snapshot:
         for epoch in range(config['max_epochs']):
-            loss = train_one_epoch(model, train_loader, optimizer, criterion_ce, criterion_dice, 
+            loss = train_one_epoch(model, train_loader, optimizer, criterion_dict, 
                                    tv_loss, mask_param, config, epoch)
             train_losses.append(loss)
-            val_loss = validate_one_epoch(model, val_loader, criterion_ce, criterion_dice, tv_loss, mask_param, config, epoch)
+            val_loss = validate_one_epoch(model, val_loader, criterion_dict, tv_loss, mask_param, config, epoch)
             val_losses.append(val_loss)
             scheduler.step(val_loss)
             early_stopper(val_loss)

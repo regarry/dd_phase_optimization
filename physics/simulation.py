@@ -584,7 +584,7 @@ class OpticsSimulation(nn.Module):
         self.noise = NoiseLayer(config)
         #self.norm01 = Normalize01()
         # Convert the list of images into a single 3D numpy array first
-        defocused_bead_stack_path = os.path.join(training_results_dir, 'defocused_beads.mat')
+        defocused_bead_stack_path = os.path.join(training_results_dir, self.config.get('defocused_beads_filename'))
         # how to load the mat file made with sio.savemat(defocused_bead_stack_path, {'defocus_beads': defocused_beads_np})
         defocused_beads_arr = sio.loadmat(defocused_bead_stack_path)['defocus_beads']
         print(f"Defocused bead stack loaded from {defocused_bead_stack_path} with shape {defocused_beads_arr.shape} and max {defocused_beads_arr.max()}")
@@ -842,11 +842,11 @@ class OpticsSimulation(nn.Module):
         U_prime = fft_field * H
         if debug:
             # save the figure
-            if r_pinhole is not None:
-                self._visualize_step("H_LP", torch.fft.fftshift(H_LP))
-            self._visualize_step("H", torch.fft.fftshift(H))
+            #if r_pinhole is not None:
+            #    self._visualize_step("H_LP", torch.fft.fftshift(H_LP))
+            #self._visualize_step("H", torch.fft.fftshift(H))
             self._visualize_step("fft_field", torch.fft.fftshift(fft_field[0][0]))
-            self._visualize_step("U_prime", torch.fft.fftshift(U_prime[0][0]))
+            #self._visualize_step("U_prime", torch.fft.fftshift(U_prime[0][0]))
         output_padded = torch.fft.ifft2(U_prime)
 
         # 5. Crop
