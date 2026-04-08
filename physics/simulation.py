@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 import os
 import scipy.io as sio
+from datetime import datetime
 #from data.io import load_tiff_sequence
 
 # nohup python mask_learning.py &> ./logs/01-31-25-09-38.txt &
@@ -712,6 +713,9 @@ class OpticsSimulation(nn.Module):
         plt.imshow(np.abs(arr), cmap='viridis')
         plt.colorbar()
         plt.tight_layout()
+        # save the figure
+        dtm = datetime.now().strftime("%Y%m%d-%H%M%S")
+        plt.savefig(f"{title}_{dtm}.png")
         plt.show(block=False)
         
     @staticmethod
@@ -777,6 +781,8 @@ class OpticsSimulation(nn.Module):
         if debug:
             self.debug_asm = False
         #print(f"DEBUG PARAMETER RECEIVED AS: {debug}")
+        
+        
         # Handle dimensions
         *batch_dims, ny, nx = input_field.shape
         if pad:
@@ -810,13 +816,13 @@ class OpticsSimulation(nn.Module):
         # Ensure self.k includes refractive index: k = 2*pi*n/lambda_0
         phase = 1j * self.k * gamma * prop_dist
         if r_pinhole is not None:
-            ny, nx = grid_size
+            grid_y, grid_x = grid_size
 
             # 1. Generate frequency coordinates directly in standard FFT order
             #    fftfreq returns: [0, 1, ..., N/2-1, -N/2, ..., -1] / (d*N)
             #    This matches the output of fft2 without needing ifftshift later.
-            fx = torch.fft.fftfreq(nx, d=self.px, device=self.device)
-            fy = torch.fft.fftfreq(ny, d=self.px, device=self.device)
+            fx = torch.fft.fftfreq(grid_x, d=self.px, device=self.device)
+            fy = torch.fft.fftfreq(grid_y, d=self.px, device=self.device)
         
             # 2. Create Meshgrid (unshifted)
             FX, FY = torch.meshgrid(fx, fy, indexing='xy')
@@ -824,6 +830,7 @@ class OpticsSimulation(nn.Module):
             F_radius = torch.sqrt(FX**2 + FY**2)
             H_LP = (F_radius <= f_max).float()
             H = torch.exp(phase) * H_LP
+            
         else:
             H = torch.exp(phase) #* mask
 
@@ -833,6 +840,12 @@ class OpticsSimulation(nn.Module):
 
         # 4. Apply Transfer Function & Inverse FFT
         U_prime = fft_field * H
+        if debug:
+            # save the figure
+            self._visualize_step("H_LP", H_LP)
+            self._visualize_step("H", H)
+            self._visualize_step("fft_field", fft_field[0][0])
+            self._visualize_step("U_prime", U_prime[0][0])
         output_padded = torch.fft.ifft2(U_prime)
 
         # 5. Crop

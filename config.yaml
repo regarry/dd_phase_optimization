@@ -1,19 +1,19 @@
 # ==========================================
 # 5. BEAD & SAMPLE GENERATION
 # ==========================================
-num_particles_range: [3800, 3801] # [min, max] emitters per image. Strong GPU: [450, 550]
+num_particles_range: [2000, 2001] # [min, max] emitters per image. Strong GPU: [450, 550]
 bead_radius: 0.5          # pixels 1.0 default
 z_coupled_ratio: 0.5
 z_coupled_spacing_range: [1, 5] # need to change the code so that the z coupled beads are only generated around the in focus plane
-z_gaussian_mu: 0.0
-#z_gaussian_sigma:
+z_gaussian_mu: 0.0 # need to finish this
+#z_gaussian_sigma: # need to update this to be the span 
 
 # ==========================================
 # 1. OPTIMIZATION & TRAINING LOOP
 # ==========================================
 random_seed: 232345
-ntrain: 320 #960          # default 640, how many bead volumes per epoch, multiple of 32 is nice
-nvalid: 64 #128             # default 128
+ntrain: 960 #960          # default 640, how many bead volumes per epoch, multiple of 32 is nice
+nvalid: 128 #128             # default 128
 
 batch_size: 1              # Training batch size
 accumulation_steps: 32 #32   # Gradient accumulation steps to simulate larger batch sizes
@@ -47,29 +47,29 @@ numerical_aperture: 0.6    # Relates to the resolution of the detection objectiv
 
 # Lenses (Focal Lengths in [m])
 focal_length_1: 300.0e-3
-focal_length_2: 75.0e-3    # focal length of the second lens
+focal_length_2: 70.0e-3    # focal length of the second lens
 focal_length_3: 75.0e-3
-focal_length_4: 300.0e-3
-focal_length_5: 20.0e-3    # illumination objective lens (mitutoyo 10x M PLAN APO obj with 200mm tube lens)
+focal_length_4: 40.0e-3
+focal_length_5: 1.0e-3    # illumination objective lens (mitutoyo 10x M PLAN APO obj with 200mm tube lens)
 fresnel_lens_focal_length: 1.0e-3
-lensless_prop_distance: 3.75e-3 # Propagation distance from SLM for lensless imaging [m]
+lensless_prop_distance: 6.6e-3 #6.6 is ideal with 4.0 axicon this may exceed the asm limit of 3.65mm but should allow for high spatial freq features# Propagation distance from SLM for lensless imaging [m]
 extra_prop_distance: 25.0e-3 # prop distance after 4f focal plane [m]
 
 # Optical Setup Configuration
 lens_approach: "sample_4f"        # "fourier_lens" or "4f" or "lensless"
 angular_spectrum_method: True
-debug_asm: True
+debug_asm: False
 aperature: False           # Typo in original (aperture), keeping as is for code compatibility
 pad_4f: False                 # Whether to pad the field during 4f simulation to avoid aliasing
 
-lowpass_pinhole_radius_mm: 3.5
+lowpass_pinhole_radius_mm: 2.7 # radius of lowpass pinhole in mm for ASM simulation, 
 # ==========================================
 # 3. SLM & PHASE MASK
 # ==========================================
-slm_px: 1.00e-6 # 0.1625e-6             # Physical pixel size of the SLM [m]
+slm_px: 1.00e-6 # if 9.2um slm and we have 8x mag then 1.15 but round down to 1um            # Physical pixel size of the SLM [m]
 phase_mask_pixel_size: 1024 # Number of pixels on the SLM side (resolution)
-initial_phase_mask: "airy"
-bessel_half_cone_angle_degrees: 4.0
+initial_phase_mask: "axicon"
+bessel_half_cone_angle_degrees: 4.0 # 0.5 max on galvo mirror then x8 so 4.0
 airy_alpha: 1.0e-4 #Controls the cubic strength and dictates the "bending" trajectory of the Airy beam.
 cylinder_axis: "x" # axis of the cylindrical lens if using cylindrical phase mask (x or y)
 phase_mask_upsample_factor: 1 # Scale factor for phase mask upsampling (simulation vs physical)
@@ -104,7 +104,7 @@ num_z_steps: 200           # Simulation steps/planes across the z-range
 # ==========================================
 quantum_efficiency: 0.6   # (0-1)
 dark_current_mean: 1.2    # Mean dark current electrons per pixel
-read_noise_std: 5.5        # Read noise std dev in electrons RMS
+read_noise_std: 15        # most significant SNR killer # Read noise std dev in electrons RMS
 camera_gain: 0.46           # Electrons per ADU
 camera_max_adu: 65535      # 16-bit depth
 robust_max_percentile: 0.999 # percentile for robust max calculation for normalization of simulated images

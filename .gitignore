@@ -13,3 +13,4 @@ temp_configs/
 *egg-info/
 codebase_dump.txt
 DeepBeam/
+*.png

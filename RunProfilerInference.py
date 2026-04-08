@@ -11,7 +11,7 @@ if __name__ == "__main__":
     #training_folder = "./training_results/800_beads_phase_model_20251021-111735"
     #training_folder = "./training_results/20260211-162226"
     
-    training_folder = "./training_results/20260403-175753"
+    training_folder = "./training_results/20260408-122219"
     epoch = 0
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     inference_results = os.path.join(training_folder, timestamp)
@@ -45,6 +45,10 @@ if __name__ == "__main__":
         #"--device", "cuda"
     ]
     
+    print("Running mask_inference.py...")
+    subprocess.run(inference_cmd, check=True)
+    print("Inference completed.")
+    
     # Run beam_profiler.py
     config_path = os.path.join(training_folder, "config.yaml")
     profiler_cmd = [
@@ -58,9 +62,7 @@ if __name__ == "__main__":
     subprocess.run(profiler_cmd, check=True)
     print("Beam profiling completed.")
     
-    print("Running mask_inference.py...")
-    subprocess.run(inference_cmd, check=True)
-    print("Inference completed.")
+    
     
     # comparison to bessel
     # Run beam_profiler.py
@@ -70,7 +72,7 @@ if __name__ == "__main__":
         "--output_dir", axicon_beam_profiles,
         "--config", config_path,
         "--gen_phase_mask", "axicon",
-        "--bessel_angle", "1.6" # 0.4 deg x 4
+        "--bessel_angle", "4.0" # 0.4 deg x 4
     ]
     subprocess.run(axicon_profiler_cmd, check=True)
     

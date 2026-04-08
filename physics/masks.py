@@ -39,7 +39,7 @@ def get_initial_phase_mask(config):
         x = np.linspace(-size//2, size//2 - 1, size) * slm_px * 1e6 # in microns
         y = np.linspace(-size//2, size//2 - 1, size) * slm_px * 1e6 # in microns
         X, Y = np.meshgrid(x, y)
-        focal_length_mm = config['lenless_prop_distance'] * 1e3 # Example focal length in mm
+        focal_length_mm = config['lensless_prop_distance'] * 1e3 # Example focal length in mm
         wavelength_nm = config['wavelength'] * 1e9 # in nm
         k = 2 * np.pi / wavelength_nm # wavenumber in nm^-1
         lens_phase = (k / (2 * focal_length_mm * 1e3)) * (X**2 + Y**2) # Quadratic phase
