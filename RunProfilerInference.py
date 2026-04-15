@@ -11,8 +11,8 @@ if __name__ == "__main__":
     #training_folder = "./training_results/800_beads_phase_model_20251021-111735"
     #training_folder = "./training_results/20260211-162226"
     
-    training_folder = "./training_results/20260408-133054"
-    epoch = 2
+    training_folder = "./training_results/20260415-161007"
+    epoch =0
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     inference_results = os.path.join(training_folder, timestamp)
     beam_profiles = inference_results

@@ -9,8 +9,16 @@ def batch_xyz_to_ideal_image(psf_kernel, xyz_np, config):
     # convolve boolean grid with ideal psf to get ideal image
     # 1. Reshape kernel to (1, 1, k, k) for conv2d compatibility
     kernel = psf_kernel.unsqueeze(0).unsqueeze(0)  # Shape: (1, 1, k, k)
-    ideal_image = F.conv2d(boolean_grid, kernel)
-    return ideal_image
+    ideal_image = F.conv2d(boolean_grid, kernel, padding='same')
+    print("\n" + "="*50)
+    print("SHAPE TRACE: batch_xyz_to_ideal_image")
+    print(f"  1. PSF Kernel (original): {psf_kernel.shape}")
+    print(f"  2. PSF Kernel (expanded): {kernel.shape}")
+    print(f"  3. Boolean Grid:         {boolean_grid.shape} (Total: {boolean_grid.numel()})")
+    print(f"  4. Ideal Image (output): {ideal_image.shape}  (Total: {ideal_image.numel()})")
+    print("="*50 + "\n")
+    scaled_ideal_image = ideal_image / (ideal_image.max() + 1e-8)
+    return scaled_ideal_image
 
 def batch_xyz_to_boolean_grid(xyz_np, config):
 

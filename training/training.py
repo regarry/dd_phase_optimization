@@ -31,6 +31,9 @@ def compute_total_loss(outputs, targets, physical_slm_phase, config, loss_funcs)
     """
     # 1. Base criteria losses (e.g., MSE, L1, etc.)
     # Ensure targets are float and shapes match for regression losses like MSE
+    print(f"DEBUG: outputs shape: {outputs.shape}")
+    print(f"DEBUG: targets shape: {targets.shape}")
+    print(f"DEBUG: targets total elements: {targets.numel()}")
     targets = targets.float()
     if targets.shape != outputs.shape:
         # Attempt to reshape targets to match outputs if there's a channel dimension mismatch
@@ -300,9 +303,13 @@ def main():
         criterion_dice = MultiClassDiceLoss()
     elif config['num_classes'] == 1:
         if config.get('mse_loss', False):
-            criterion_mse = nn.MSELoss()
+            criterion_mse = nn.HuberLoss(delta=0.1)
             criterion_dict = {'mse_loss': criterion_mse}
-            print("Using MSE Loss for regression to ideal image.")
+            print("Actually Using Huber Loss for regression to ideal image with delta 0.1.")
+            huber_message_file_path = os.path.join(training_results_dir, 'using_huber_loss_demo.txt')
+            with open(huber_message_file_path, 'a') as f:
+                f.write("Actually Using Huber Loss for regression to ideal image with delta 0.1." + "\n")
+            
         else:
             criterion_ce = nn.BCEWithLogitsLoss()
             criterion_dice = BinaryDiceLoss() 
@@ -344,9 +351,9 @@ def main():
     with MemorySnapshot(os.path.join(training_results_dir, "crash_snapshot.pickle")) as snapshot:
         for epoch in range(config['max_epochs']):
             loss = train_one_epoch(model, train_loader, optimizer, criterion_dict, 
-                                   tv_loss, mask_param, config, epoch)
+                                   mask_param, config, epoch)
             train_losses.append(loss)
-            val_loss = validate_one_epoch(model, val_loader, criterion_dict, tv_loss, mask_param, config, epoch)
+            val_loss = validate_one_epoch(model, val_loader, criterion_dict, mask_param, config, epoch)
             val_losses.append(val_loss)
             scheduler.step(val_loss)
             early_stopper(val_loss)

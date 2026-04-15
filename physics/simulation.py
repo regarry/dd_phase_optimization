@@ -1333,7 +1333,7 @@ class OpticsSimulation(nn.Module):
             plt.title('Beam profile collapsed in the dithering axis')
             plt.xlabel('y(mm)')
             plt.ylabel('z(mm)')
-            plt.savefig(column_visual_path) # Save the plot as an image file
+            #plt.savefig(column_visual_path) # Save the plot as an image file
             plt.close() # Close the plot to prevent it from displaying immediately in some environments
 
             return column_sums_per_image_16
