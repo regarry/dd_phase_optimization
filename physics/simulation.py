@@ -1199,151 +1199,137 @@ class OpticsSimulation(nn.Module):
     
 
     @staticmethod
-    def standardize_and_scale_to_uint16(img: np.ndarray) -> np.ndarray:
+    def standardize_and_scale(img):
         """
-        Standardizes an image (zero mean, unit variance) and rescales to uint16 [0, 65535].
-        Args:
-            img (np.ndarray): The input image array.
-        Returns:
-            np.ndarray: The standardized and scaled image as uint16.
+        Standardizes and scales input to a 16-bit range (0-65535).
+        - If Torch Tensor: Returns Float Tensor (preserves gradients).
+        - If NumPy Array: Returns uint16 Array.
         """
-        # If tensor, convert to numpy
         if isinstance(img, torch.Tensor):
-            img = img.cpu().numpy()
-        img_float = img.astype(np.float64)
-        mean = img_float.mean()
-        std = img_float.std()
-        if std > 0:
-            img_float = (img_float - mean) / std
-        else:
-            img_float = img_float - mean  # Avoid division by zero
-
-        # Min-max scale to [0, 1]
-        img_float -= img_float.min()
-        max_val = img_float.max()
-        if max_val > 0:
-            img_float /= max_val
-
-        # Scale to uint16
-        return (img_float * 65535).astype(np.uint16)
-    
-    def generate_beam_cross_section(self, initial_field: np.ndarray, output_folder: str, z_range_px: tuple, y_slice_px: tuple, asm: bool = True) -> np.ndarray:
-        """
-        Generates a 2D cross-section of the beam by stacking 1D slices along the z-axis.
-        
-        Args:
-            initial_field (np.ndarray): The complex field at z=0.
-            output_folder (str): root Folder to save 2D intensity profiles at each z-step.
-            z_range_px (tuple): (min, max) propagation distance in pixels.
-            y_slice_px (tuple): (min, max) slice of the y-axis in pixels.
+            # --- Torch Logic (Gradients Preserved) ---
+            img_min = img.min()
+            img_max = img.max()
             
-        Returns:
-            np.ndarray: A 2D array representing the beam's cross-section (ZY plane).
+            denom = img_max - img_min
+            if denom > 1e-12: # Using a small epsilon for stability
+                # Scale to 0-65535 but keep as float
+                return (img - img_min) / denom * 65535.0
+            
+            return torch.zeros_like(img)
+
+        elif isinstance(img, np.ndarray):
+            # --- NumPy Logic ---
+            img_min = img.min()
+            img_max = img.max()
+            
+            denom = img_max - img_min
+            if denom > 1e-12:
+                img_scaled = (img - img_min) / denom
+                return (img_scaled * 65535).astype(np.uint16)
+            
+            return np.zeros_like(img, dtype=np.uint16)
+
+        else:
+            raise TypeError(f"Expected torch.Tensor or np.ndarray, got {type(img)}")
+    
+    def _compute_core_propagation(self, initial_field: np.ndarray, z_range_px: tuple, y_slice_px: tuple, asm: bool = True):
         """
-        output_beam_sections_dir = os.path.join(output_folder, "beam_sections")
-        os.makedirs(output_beam_sections_dir, exist_ok=True)
+        CORE PHYSICS: Propagates the field and calculates the 3D intensity volume,
+        the 2D cross-section profile, and the 2D column sums. No file I/O.
+        """
         z_min_px, z_max_px, z_step = z_range_px
         y_min_px, y_max_px = y_slice_px
         
         num_z_steps = len(range(z_min_px, z_max_px, z_step))
-        # Initialize the cross-section profile array accounting for step size
-
-        cross_section_profile = np.zeros((num_z_steps, y_max_px - y_min_px))
-        # init empty tensor to hold z min to z max with z step of width and height depednig on intial_field size'
         height, width = initial_field.shape
+        
+        cross_section_profile = torch.zeros((num_z_steps, y_max_px - y_min_px))
         intensity_at_z = torch.zeros((num_z_steps, height, width))
 
-        print(f"Generating beam cross-section for {num_z_steps} slices...")
-        if asm:
-            print("using angular spectrum")
-        else:
-            print("using fresnel approximation")
-            
+        # 1. Propagate and calculate intensity
         for i, z_px in enumerate(range(z_min_px, z_max_px, z_step)):
             if z_px == 0:
                 z_px = 1.0e-3 # avoid zero division
         
-            # Propagate field and get intensity
             if asm:
-                output_field = self.angular_spectrum_propagation(initial_field, z_px, pad = self.pad_4f)
-                intensity_at_z[i] = torch.real(output_field * torch.conj(output_field))
+                output_field = self.angular_spectrum_propagation(initial_field, z_px, pad=self.pad_4f)
             else:
                 output_field = self.fresnel_propagation(initial_field, z_px)
-                intensity_at_z[i] = torch.real(output_field * torch.conj(output_field))
+            
+            intensity_at_z[i] = torch.real(output_field * torch.conj(output_field))
 
             # Extract the central 1D slice along the y-axis
-            center_row_idx = intensity_at_z[i].shape[0] // 2
-            center_col_idx = intensity_at_z[i].shape[1] // 2
-            cross_section_profile[i,:] = intensity_at_z[i][center_row_idx, center_col_idx + y_min_px : center_col_idx + y_max_px]
-            
+            center_row_idx = height // 2
+            center_col_idx = width // 2
+            cross_section_profile[i, :] = intensity_at_z[i][center_row_idx, center_col_idx + y_min_px : center_col_idx + y_max_px]
         
-        # normalize intensity_at_z to uint16
-        #intensity_at_z = self.normalize_to_uint16(intensity_at_z[:])
-        intensity_at_z = self.standardize_and_scale_to_uint16(intensity_at_z[:])
+        # 2. Standardize intensity (as in original code)
+        intensity_at_z = self.standardize_and_scale(intensity_at_z[:])
+        
+        # 3. Calculate column sums from the standardized intensity
+        P_slice = intensity_at_z[:, :, center_col_idx + y_min_px : center_col_idx + y_max_px]
+        # Convert to numpy if it's a tensor for standard np operations
+            
+        column_sums_32 = torch.sum(P_slice, axis=1, dtype=torch.float32)
+        
+        # Normalize and cast to uint16
+        p_min, p_max = column_sums_32.min(), column_sums_32.max()
+        normalized = (column_sums_32 - p_min) / (p_max - p_min) if (p_max - p_min) > 0 else column_sums_32
+        column_sums_image = (normalized * 65535).float()
+
+        return intensity_at_z, cross_section_profile, column_sums_image
+
+    def _save_outputs_to_disk(self, intensity_at_z, column_sums_image, output_folder, z_range_px):
+        """
+        CORE I/O: Handles all saving of TIFFs and plotting.
+        """
+        z_min_px, z_max_px, z_step = z_range_px
+        output_beam_sections_dir = os.path.join(output_folder, "beam_sections")
+        os.makedirs(output_beam_sections_dir, exist_ok=True)
+        
+        # 1. Save individual Z-step intensity images
         for i, z_px in enumerate(range(z_min_px, z_max_px, z_step)):
-            # Save the full 2D intensity profile at the current z-step
-            z_mm = z_px*self.px*1.0e3
+            z_mm = z_px * self.px * 1.0e3
             save_path = os.path.join(output_beam_sections_dir, f'intensity_{i:04d}_{z_mm:.2f}.tiff')
-            #print(f'{i} {z_px}')
             skimage.io.imsave(save_path, intensity_at_z[i], check_contrast=False)
-        
-        def visualize_column_sums(P: np.ndarray, output_folder) -> np.ndarray:
-            """
-            Calculates the sum of columns for each image in a 3D NumPy array
-            and visualizes the results as a new "image".
-
-            Args:
-                P (np.ndarray): A 3D NumPy array of shape (num_images, height, width),
-                                where 'height' and 'width' are typically 2048.
-                                The data type is expected to be uint16.
-
-            Returns:
-                np.ndarray: A 2D NumPy array of shape (num_images, width), where
-                            each row represents an original image and its column sums.
-                            The data type will be uint32 to prevent overflow.
-            """
-            if P.ndim != 3:
-                raise ValueError("Input array P must be 3-dimensional (num_images, height, width).")
             
-            # Sum columns for each image.
-            # Using uint32 to prevent potential overflow as sums can exceed uint16 max.
-            column_sums_per_image_32 = np.sum(P, axis=1, dtype=np.uint32)
-            def cast_to_uint16(arr):
-                # 1. Normalize the data to the 0.0 - 1.0 range
-                # We use floats temporarily to avoid rounding errors during division
-                p_min = arr.min()
-                p_max = arr.max()
+        # 2. Visualize and save column sums plot
+        column_visual_path = os.path.join(output_folder, 'column_sums_visualization.png')
+        plt.figure(figsize=(12, 6))
+        plt.imshow(column_sums_image, aspect='auto', cmap='viridis')
+        plt.colorbar(label='')
+        plt.title('Beam profile collapsed in the dithering axis')
+        plt.xlabel('y(mm)')
+        plt.ylabel('z(mm)')
+        plt.savefig(column_visual_path) 
+        plt.close()
 
-                # Avoid division by zero if the image is blank
-                if p_max - p_min > 0:
-                    normalized = (arr - p_min) / (p_max - p_min)
-                else:
-                    normalized = arr
+    # =====================================================================
+    # PUBLIC API FUNCTIONS
+    # =====================================================================
 
-                # 2. Scale to 16-bit range (0 - 65535) and cast
-                image_16bit = (normalized * 65535).astype(np.uint16)
-                return image_16bit
-            
-            column_sums_per_image_16 = cast_to_uint16(column_sums_per_image_32)
-            column_visual_path = os.path.join(output_folder,'column_sums_visualization.png')
-            # Visualize the new "image"
-            plt.figure(figsize=(12, 6))
-            plt.imshow(column_sums_per_image_16, aspect='auto', cmap='viridis')
-            plt.colorbar(label='')
-            plt.title('Beam profile collapsed in the dithering axis')
-            plt.xlabel('y(mm)')
-            plt.ylabel('z(mm)')
-            #plt.savefig(column_visual_path) # Save the plot as an image file
-            plt.close() # Close the plot to prevent it from displaying immediately in some environments
+    def get_column_sums_array(self, initial_field: np.ndarray, z_range_px: tuple, y_slice_px: tuple, asm: bool = True) -> np.ndarray:
+        """
+        FAST ROUTE: Calculates and returns ONLY the column_sums_image array.
+        Does not plot anything or save any files to disk.
+        """
+        print("Calculating column sums array (no saving/plotting)...")
+        _, _, column_sums_image = self._compute_core_propagation(initial_field, z_range_px, y_slice_px, asm)
+        return column_sums_image
 
-            return column_sums_per_image_16
+    def generate_beam_cross_section(self, initial_field: np.ndarray, output_folder: str, z_range_px: tuple, y_slice_px: tuple, asm: bool = True):
+        """
+        FULL ROUTE: Calculates arrays, returns them, and saves everything 
+        (TIFFs and plots) to the specified output folder.
+        """
+        print("Generating beam cross-section and saving outputs...")
+        intensity_at_z, cross_section_profile, column_sums_image = self._compute_core_propagation(
+            initial_field, z_range_px, y_slice_px, asm
+        )
         
-        column_sums_image = visualize_column_sums(intensity_at_z[:,:,center_col_idx + y_min_px : center_col_idx + y_max_px], output_folder)
-    
-        # save cross_section_profile as tiff in 32 bit float format
-        #cross_section_save_path = os.path.join(output_folder, 'cross_section_profile.tiff')
-        #skimage.io.imsave(cross_section_save_path, cross_section_profile.astype(np.float32))
-        print("Cross-section generation complete.")
+        self._save_outputs_to_disk(intensity_at_z, column_sums_image, output_folder, z_range_px)
+        
+        print("Cross-section generation and saving complete.")
         return cross_section_profile, column_sums_image, intensity_at_z
 
     @staticmethod
@@ -1418,6 +1404,7 @@ class OpticsSimulation(nn.Module):
             
         self.counter += 1
         
+        
         if self.conv3d == False:
             # make a 4D tensor to store the 2D images
             imgs3D = torch.zeros(Nbatch, self.Nimgs, self.image_volume_size_px[0], self.image_volume_size_px[1]).type(torch.FloatTensor).to(phase_mask.device)
@@ -1462,5 +1449,5 @@ class OpticsSimulation(nn.Module):
                     elif self.conv3d == True and self.Nimgs > 1:
                         imgs3D[i, 0, l, x_ori - self.psf_keep_radius:x_ori + self.psf_keep_radius + 1, y - self.psf_keep_radius: y + self.psf_keep_radius + 1] += \
                             self.gpu_defocused_beads[abs(z.item()-self.z_depth_list[l])] * photons
-                    
+        
         return imgs3D

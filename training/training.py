@@ -25,7 +25,7 @@ from utils.debug import MemorySnapshot, print_all_gpu_stats
 from physics.masks import get_initial_phase_mask
 from physics.simulation import TotalVariationLoss, apply_8bit_physics
 
-def compute_total_loss(outputs, targets, physical_slm_phase, config, loss_funcs):
+def compute_total_loss(outputs, targets, physical_slm_phase, config, loss_funcs, column_sums = None):
     """
     Helper function to dynamically compute and sum all active losses.
     """
@@ -47,6 +47,8 @@ def compute_total_loss(outputs, targets, physical_slm_phase, config, loss_funcs)
         if loss_name == 'tv_loss':
             # TV loss applies to the phase mask, not the outputs
             val = criterion(physical_slm_phase)
+        elif loss_name == 'spatial_multi_well_loss':
+            val = criterion(column_sums)
         else:
             # Standard losses apply to outputs and targets
             val = criterion(outputs, targets)
@@ -54,29 +56,6 @@ def compute_total_loss(outputs, targets, physical_slm_phase, config, loss_funcs)
         weight = config.get(f'{loss_name}_weight', 1.0)
         loss_dict[loss_name] = val * weight
         total_loss += loss_dict[loss_name]
-
-    # 2. Out-of-Focus (OOF) Light Penalty (Custom logic)
-    oof_weight = config.get('oof_loss_weight', 0.0)
-    if oof_weight > 0.0:
-        if targets.dim() == 4:
-            bead_mask = (targets > 0).float()
-        else:
-            bead_mask = (targets > 0).float().unsqueeze(1)
-
-        oof_mask = 1.0 - bead_mask
-        
-        if config.get('num_classes', 1) > 1:
-            probs = torch.softmax(outputs, dim=1)
-            oof_intensity = (probs[:, 1:, :, :] * oof_mask).sum()
-        else:
-            # If you output raw values for MSE, you might want to clamp or normalize 
-            # this instead of sigmoid, depending on your physics model.
-            probs = torch.sigmoid(outputs) 
-            oof_intensity = (probs * oof_mask).sum()
-
-        oof_loss_val = oof_weight * oof_intensity / outputs.numel()
-        loss_dict['oof_loss'] = oof_loss_val
-        total_loss += oof_loss_val
 
     return total_loss, loss_dict
 
@@ -99,10 +78,13 @@ def train_one_epoch(model, dataloader, optimizer, loss_funcs, mask_param, config
         physical_slm_phase = apply_8bit_physics(mask_param)
         
         # 2. FORWARD PASS
-        outputs = model(physical_slm_phase, bead_xyz_list)
+        if config.get('SpatialMulitWellLoss', False):
+            outputs, column_sums = model(physical_slm_phase, bead_xyz_list)
+        else:
+            outputs = model(physical_slm_phase, bead_xyz_list)
         
         # 3. LOSS & OPTIMIZATION
-        loss, _ = compute_total_loss(outputs, targets, physical_slm_phase, config, loss_funcs)
+        loss, _ = compute_total_loss(outputs, targets, physical_slm_phase, config, loss_funcs, column_sums if config.get('SpatialMulitWellLoss', False) else None)
         
         loss.backward()
         
@@ -131,10 +113,13 @@ def validate_one_epoch(model, dataloader, loss_funcs, mask_param, config, epoch)
             targets = targets.to(main_device)
             
             # FORWARD PASS
-            outputs = model(physical_slm_phase, bead_xyz_list)
+            if config.get('SpatialMulitWellLoss', False):
+                outputs, column_sums = model(physical_slm_phase, bead_xyz_list)
+            else:
+                outputs = model(physical_slm_phase, bead_xyz_list)
             
             # LOSS CALCULATION
-            loss, _ = compute_total_loss(outputs, targets, physical_slm_phase, config, loss_funcs)
+            loss, _ = compute_total_loss(outputs, targets, physical_slm_phase, config, loss_funcs, column_sums if config.get('SpatialMulitWellLoss', False) else None)
             total_loss += loss.item()
 
     avg_loss = total_loss / len(dataloader)
@@ -233,6 +218,35 @@ class MultiClassDiceLoss(nn.Module):
         # 5. Loss is 1 - Dice (Averaged over classes and batch)
         return 1.0 - dice_score.mean()
 
+class DynamicSpatialWellLoss(nn.Module):
+    def __init__(self, x_bound, y_target):
+        super().__init__()
+        self.x = x_bound
+        self.y = y_target
+        
+        # Alpha, Beta, Gamma weights (learnable)
+        self.loss_weights = nn.Parameter(torch.zeros(3))
+
+    def forward(self, top_down_view_dithed):
+        # 1. Sum across rows to get intensity per column
+        # If pred_grid is (Batch, Rows, Cols), dim=1 is Rows.
+        column_profile = torch.sum(top_down_view_dithed, dim=1) 
+        
+        # 2. Compute 1D costs based on distance from center
+        cols = column_profile.shape[-1]
+        d = torch.abs(torch.arange(cols, device=top_down_view_dithed.device).float() - (cols-1)/2)
+        
+        # 3. Apply your non-linear wells
+        w = torch.softmax(self.loss_weights, dim=0)
+        cost_map = (w[0] * d**2) + \
+                (w[1] * (d - self.y)**2) + \
+                (w[2] * torch.clamp(d - self.x, min=0)**2)
+        
+        # 4. Final scalar loss
+        # (Batch, Cols) * (Cols) -> (Batch, Cols)
+        return torch.mean(column_profile * cost_map)
+    
+
 def main():
     start_time = time.time()
     # 1. Load & Expand Config
@@ -275,7 +289,45 @@ def main():
     save_normalized_png(initial_mask, os.path.join(training_results_dir, 'initial_phase_mask.png'))
     mask_param = nn.Parameter(torch.from_numpy(initial_mask).float().to(main_device))
     
-    optimizer = Adam(list(model.parameters()) + [mask_param], lr=config['initial_learning_rate'])
+    # Loss setup
+    criterion_dict = {}
+
+    # 1. Determine Loss Functions
+    if config['num_classes'] == 3:
+        weights = torch.tensor(config.get('weights', [1,1,1])).float().to(main_device)
+        criterion_ce = nn.CrossEntropyLoss(weight=weights)
+        criterion_dice = MultiClassDiceLoss()
+        criterion_dict = {'ce_loss': criterion_ce, 'dice_loss': criterion_dice}
+        print("Using MultiClassDiceLoss for 3-class segmentation.")
+
+    elif config['num_classes'] == 1:
+        if config.get('mse_loss', False):
+            criterion_mse = nn.HuberLoss(delta=0.1)
+            criterion_dict = {'mse_loss': criterion_mse}
+            print("Using Huber Loss for regression.")
+        elif config.get('SpatialMulitWellLoss', False):  
+            criterion_smw = DynamicSpatialWellLoss(x_bound=config.get('spatial_well_x'), y_target=config.get('spatial_well_y'))
+            criterion_dict = {'spatial_multi_well_loss': criterion_smw}
+            print("Using Dynamic Spatial Multi-Well Loss.")
+        else:
+            criterion_ce = nn.BCEWithLogitsLoss()
+            criterion_dice = BinaryDiceLoss() 
+            criterion_dict = {'bce_loss': criterion_ce, 'dice_loss': criterion_dice}
+
+    else:
+        raise ValueError("Unsupported number of classes. Only 1 or 3 are supported.")
+
+    # 2. Setup Optimizer (Always happens, regardless of branch)
+    # Check if we need special param groups for the Multi-Well loss
+    if 'spatial_multi_well_loss' in criterion_dict:
+        optimizer = Adam([
+            {'params': list(model.parameters()) + [mask_param], 'lr': config['initial_learning_rate']},
+            {'params': criterion_dict['spatial_multi_well_loss'].parameters(), 'lr': config['initial_learning_rate'] * 0.1}
+        ])
+    else:
+        # Standard optimizer for all other cases
+        optimizer = Adam(list(model.parameters()) + [mask_param], lr=config['initial_learning_rate'])
+
     
     # 2. Setup Scheduler
     # mode='min': We want to reduce LR when loss stops decreasing (minimizing)
@@ -294,31 +346,7 @@ def main():
         min_delta=config['early_stopping_min_delta']
     )
     
-    # Loss setup
-    criterion_dict = {}
-    if config['num_classes'] == 3:
-        weights = torch.tensor(config.get('weights', [1,1,1])).float().to(main_device)
-        criterion_ce = nn.CrossEntropyLoss(weight=weights)
-        print("Using MultiClassDiceLoss for 3-class segmentation.")
-        criterion_dice = MultiClassDiceLoss()
-    elif config['num_classes'] == 1:
-        if config.get('mse_loss', False):
-            criterion_mse = nn.HuberLoss(delta=0.1)
-            criterion_dict = {'mse_loss': criterion_mse}
-            print("Actually Using Huber Loss for regression to ideal image with delta 0.1.")
-            huber_message_file_path = os.path.join(training_results_dir, 'using_huber_loss_demo.txt')
-            with open(huber_message_file_path, 'a') as f:
-                f.write("Actually Using Huber Loss for regression to ideal image with delta 0.1." + "\n")
-            
-        else:
-            criterion_ce = nn.BCEWithLogitsLoss()
-            criterion_dice = BinaryDiceLoss() 
-            criterion_dict = {'bce_loss': criterion_ce, 'dice_loss': criterion_dice}
-    else:
-        raise ValueError("Unsupported number of classes. Only 1 (binary) or 3 (multi-class) are supported.")
     
-    tv_loss = TotalVariationLoss(weight=config.get('tv_loss_weight', 0.0))
-
     # 5. Training Dataloader
     train_steps_per_epoch = int(config['ntrain'] / config['batch_size'])
     train_ds = SyntheticMicroscopeData(epoch_length=train_steps_per_epoch, config=config)

@@ -13,6 +13,8 @@ class ParallelEndToEndModel(nn.Module):
         super().__init__()
         
         # A. Hardware Setup
+        self.config = config
+        self.px = float(config['px'])
         self.main_device = torch.device('cuda:0')
         
         # B. Initialize Sub-Modules
@@ -36,10 +38,16 @@ class ParallelEndToEndModel(nn.Module):
         # --- Step 1: Physical Simulation (Multi-GPU) ---
         # The CPU wrapper calls the physics engine.
         # The engine splits data, runs on GPU 0, 1, 2..., and sums result to GPU 0.
-        sensor_image = self.physics(mask_param, emitters)
+        if self.config.get('SpatialMulitWellLoss', False):
+            sensor_image, column_sums = self.physics(mask_param, emitters)
+        else:
+            sensor_image = self.physics(mask_param, emitters)
         
         # --- Step 2: Bead Prediction (Single GPU) ---
         # The image is now on cuda:0. We pass it to the UNet.
         bead_prediction = self.unet(sensor_image)
         
-        return bead_prediction
+        if self.config.get('SpatialMulitWellLoss', False):
+            return bead_prediction, column_sums
+        else:
+            return bead_prediction
