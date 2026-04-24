@@ -1,7 +1,7 @@
 # ==========================================
 # 5. BEAD & SAMPLE GENERATION
 # ==========================================
-num_particles_range: [1200, 1201] # [min, max] emitters per image. Strong GPU: [450, 550]
+num_particles_range: [2000, 2001] # [min, max] emitters per image. Strong GPU: [450, 550]
 bead_radius: 0.5          # pixels 1.0 default
 z_coupled_ratio: 0.5
 z_coupled_spacing_range: [1, 5] # need to change the code so that the z coupled beads are only generated around the in focus plane
@@ -11,15 +11,15 @@ z_gaussian_mu: 0.0 # need to finish this
 # ==========================================
 # 1. OPTIMIZATION & TRAINING LOOP
 # ==========================================
-random_seed: 23231
-ntrain: 384  #960, 384          # default 640, how many bead volumes per epoch, multiple of 32 is nice
+random_seed: 232312
+ntrain: 960  #960, 384          # default 640, how many bead volumes per epoch, multiple of 32 is nice
 nvalid: 128 #128             # default 128
 
 batch_size: 1              # Training batch size
 accumulation_steps: 32 #32   # Gradient accumulation steps to simulate larger batch sizes
 max_epochs: 1000 #1000            # 200
 save_epoch_interval: 2
-initial_learning_rate: 1.0e-4
+initial_learning_rate: 1.0e-1
 gradient_checkpointing: False
 quantize_slm: True # this is to show we are using quantized training now, not actually implemented as a config variable
 gaussian_z_bead_dist: True # this is just to show we are using gaussian z bead distribution, not actually implemented as a config variable
@@ -43,9 +43,10 @@ mse_loss_weight : 0.0
 spatial_multi_well_loss_weight: 0.0
 mse_loss: False
 SpatialMulitWellLoss: False # concentrate light to a focus and then push remaining light away from sample
-disable_camera_simulation: True # not working yet
+freeze_unet: False # whether to freeze the unet weights during training (only optimize the phase mask)
+#disable_camera_simulation: True # not working yet
 
-spatial_well_x: 2 # in pixels distance desired fwhm of center lobe
+spatial_well_x: 20 # in pixels distance desired fwhm of center lobe
 smw_z_min_mm: -0.064             # Min z-position for beam profile [mm]
 smw_z_max_mm: 0.064              # Max z-position for beam profile [mm]
 smw_y_min_mm: -0.128             # Min y-position for beam profile [mm]
@@ -66,7 +67,7 @@ focal_length_3: 75.0e-3
 focal_length_4: 40.0e-3
 focal_length_5: 1.0e-3    # illumination objective lens (mitutoyo 10x M PLAN APO obj with 200mm tube lens)
 fresnel_lens_focal_length: 1.0e-3
-lensless_prop_distance: 6.6e-3 #6.6 is ideal with 4.0 axicon this may exceed the asm limit of 3.65mm but should allow for high spatial freq features# Propagation distance from SLM for lensless imaging [m]
+lensless_prop_distance: 3.75e-3 #6.6e-3 is ideal with 4.0 axicon this may exceed the asm limit of 3.65mm but should allow for high spatial freq features# Propagation distance from SLM for lensless imaging [m]
 extra_prop_distance: 25.0e-3 # prop distance after 4f focal plane [m]
 
 # Optical Setup Configuration
@@ -84,7 +85,7 @@ slm_px: 1.00e-6 # if 9.2um slm and we have 8x mag then 1.15 but round down to 1u
 phase_mask_pixel_size: 1024 # Number of pixels on the SLM side (resolution)
 initial_phase_mask: "file"
 bessel_half_cone_angle_degrees: 4.0 # 0.5 max on galvo mirror then x8 so 4.0
-airy_alpha: 1.0e-4 #Controls the cubic strength and dictates the "bending" trajectory of the Airy beam.
+airy_alpha: 1.0e-1 #Controls the cubic strength and dictates the "bending" trajectory of the Airy beam.
 cylinder_axis: "x" # axis of the cylindrical lens if using cylindrical phase mask (x or y)
 phase_mask_upsample_factor: 1 # Scale factor for phase mask upsampling (simulation vs physical)
 
@@ -93,7 +94,7 @@ phase_mask_upsample_factor: 1 # Scale factor for phase mask upsampling (simulati
 # ==========================================
 
 # ***************** want to change this to input meters not px?
-image_volume: [48, 512, 128] # the first two dimensions should be powers of 2 for the u-net [y, x, z] volume of imaging in px (camera coordinates)
+image_volume: [48, 1024, 256] # the first two dimensions should be powers of 2 for the u-net [y, x, z] volume of imaging in px (camera coordinates)
 ratio_input_output_image_size: 1 # default with Unet 1, with ResNet 4
 
 # ==========================================
@@ -118,7 +119,7 @@ num_z_steps: 200           # Simulation steps/planes across the z-range
 # ==========================================
 quantum_efficiency: 0.6   # (0-1)
 dark_current_mean: 1.2    # Mean dark current electrons per pixel
-read_noise_std: 15        # most significant SNR killer # Read noise std dev in electrons RMS
+read_noise_std: 30        # most significant SNR killer # Read noise std dev in electrons RMS
 camera_gain: 0.46           # Electrons per ADU
 camera_max_adu: 65535      # 16-bit depth
 robust_max_percentile: 0.999 # percentile for robust max calculation for normalization of simulated images
@@ -132,7 +133,7 @@ min_clip_value: 0.0              # minimum value to clip the normalized images t
 use_unet: True
 conv3d: False
 dropout: 0.0
-num_classes: 3             # 0=background, 1=bead, 2=between beads
+num_classes: 1             # 0=background, 1=bead, 2=between beads
 z_depth_list: [0]          # z slices input into the cnn
 
 # ==========================================
@@ -145,7 +146,7 @@ path_train: "traininglocations"
 bfp_dir: "back_focal_plane"
 training_data_path: "training_results"
 defocused_beads_filename: "defocused_beads.mat"
-phase_mask_file: "training_results/20260327-175040/learned_phase_masks/tif/mask_phase_epoch_40.tif"
+phase_mask_file: "training_results/20260407-175202/learned_phase_masks/tif/mask_phase_epoch_2.tif"
 
 # ==========================================
 # 10. PSF GENERATION UTILS

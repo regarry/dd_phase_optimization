@@ -1287,10 +1287,22 @@ class OpticsSimulation(nn.Module):
         output_beam_sections_dir = os.path.join(output_folder, "beam_sections")
         os.makedirs(output_beam_sections_dir, exist_ok=True)
         
+        # --- CONVERSION LOGIC ---
+        # Convert Torch Tensors to NumPy uint16 for disk storage
+        if isinstance(intensity_at_z, torch.Tensor):
+            # Detach from graph, move to CPU, convert to numpy, then scale/cast
+            intensity_at_z = intensity_at_z.detach().cpu().numpy().astype(np.uint16)
+        
+        if isinstance(column_sums_image, torch.Tensor):
+            column_sums_image = column_sums_image.detach().cpu().numpy()
+        # ------------------------
+
         # 1. Save individual Z-step intensity images
         for i, z_px in enumerate(range(z_min_px, z_max_px, z_step)):
             z_mm = z_px * self.px * 1.0e3
             save_path = os.path.join(output_beam_sections_dir, f'intensity_{i:04d}_{z_mm:.2f}.tiff')
+            
+            # Now intensity_at_z[i] is guaranteed to be a NumPy array
             skimage.io.imsave(save_path, intensity_at_z[i], check_contrast=False)
             
         # 2. Visualize and save column sums plot

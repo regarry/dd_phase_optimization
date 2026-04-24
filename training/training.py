@@ -34,10 +34,7 @@ def compute_total_loss(outputs, targets, physical_slm_phase, config, loss_funcs,
     print(f"DEBUG: outputs shape: {outputs.shape}")
     print(f"DEBUG: targets shape: {targets.shape}")
     print(f"DEBUG: targets total elements: {targets.numel()}")
-    targets = targets.float()
-    if targets.shape != outputs.shape:
-        # Attempt to reshape targets to match outputs if there's a channel dimension mismatch
-        targets = targets.view_as(outputs)
+    #targets = targets.float()
 
     loss_dict = {}
     total_loss = 0.0
@@ -49,6 +46,9 @@ def compute_total_loss(outputs, targets, physical_slm_phase, config, loss_funcs,
             val = criterion(physical_slm_phase)
         elif loss_name == 'spatial_multi_well_loss':
             val = criterion(column_sums)
+        elif loss_name == 'ce_loss':
+            targets_ce = targets.squeeze(1).long()  # Ensure targets are (Batch, H, W) and long for CE
+            val = criterion(outputs, targets_ce)
         else:
             # Standard losses apply to outputs and targets
             val = criterion(outputs, targets)
@@ -223,28 +223,37 @@ class DynamicSpatialWellLoss(nn.Module):
         super().__init__()
         self.x = x_bound
         self.y = y_target
-        
-        # Alpha, Beta, Gamma weights (learnable)
-        self.loss_weights = nn.Parameter(torch.zeros(3))
+        # Using a learnable parameter to adjust the 'steepness' of the penalty
+        self.steepness = nn.Parameter(torch.tensor([2.0])) 
 
     def forward(self, top_down_view_dithed):
-        # 1. Sum across rows to get intensity per column
-        # If pred_grid is (Batch, Rows, Cols), dim=1 is Rows.
+        # 1. Collapse to 1D lateral profile
         column_profile = torch.sum(top_down_view_dithed, dim=1) 
         
-        # 2. Compute 1D costs based on distance from center
+        # 2. Peak Normalization (Range: 0 to 1)
+        # We find the min and max for each beam in the batch
+        p_min = column_profile.min(dim=-1, keepdim=True)[0]
+        p_max = column_profile.max(dim=-1, keepdim=True)[0]
+        
+        # Scale to [0, 1]. The 1e-8 prevents division by zero if the beam is empty.
+        norm_profile = (column_profile - p_min) / (p_max - p_min + 1e-8)
+        
         cols = column_profile.shape[-1]
-        d = torch.abs(torch.arange(cols, device=top_down_view_dithed.device).float() - (cols-1)/2)
+        center = (cols - 1) / 2
+        d = torch.abs(torch.arange(cols, device=top_down_view_dithed.device).float() - center)
         
-        # 3. Apply your non-linear wells
-        w = torch.softmax(self.loss_weights, dim=0)
-        cost_map = (w[0] * d**2) + \
-                (w[1] * (d - self.y)**2) + \
-                (w[2] * torch.clamp(d - self.x, min=0)**2)
+        # 2. Define the "Penalty Zone" logic
+        # diff is 0 for d < x, and grows linearly for d > x
+        diff = torch.clamp(d - self.x, min=0)
         
-        # 4. Final scalar loss
-        # (Batch, Cols) * (Cols) -> (Batch, Cols)
-        return torch.mean(column_profile * cost_map)
+        # 3. Shape the cost: Linear growth * Exponential decay
+        # This creates a peak just after x and a tail that reaches low values by y
+        decay_constant = (self.y - self.x) / self.steepness
+        cost_map = diff * torch.exp(-diff / decay_constant)
+        
+        # 4. Normalize and calculate final scalar loss
+        # We want the optimizer to focus on high-intensity areas in the penalty zone
+        return torch.mean(norm_profile * cost_map)
     
 
 def main():

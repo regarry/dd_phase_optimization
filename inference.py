@@ -55,7 +55,13 @@ def inference_one_epoch(model, dataloader, mask_param, config, out_dir):
             # ---------------------------------------------------------
             # 2. FORWARD PASS
             # ---------------------------------------------------------
-            logits = model(mask_param, bead_xyz_list)
+            if config.get('SpatialMulitWellLoss', False):
+                # If using SpatialMultiWellLoss, we need to compute column sums for the loss
+                # but the model's output is still the logits for each pixel.
+                logits, column_sums = model(mask_param, bead_xyz_list)
+            else:
+                logits = model(mask_param, bead_xyz_list)
+                
             if config['num_classes'] == 3:
                 probs = torch.softmax(logits, dim=1)
                 cnn_img = torch.argmax(probs,dim=1)
@@ -101,7 +107,10 @@ def inference_one_epoch(model, dataloader, mask_param, config, out_dir):
             print(f"Saved ground truth for key {batch_idx} to {gt_path}")
             
             # camera image
-            camera = model.physics(mask_param, bead_xyz_list)
+            if config.get('SpatialMulitWellLoss', False):
+                camera, column_sums = model.physics(mask_param, bead_xyz_list)
+            else:
+                camera = model.physics(mask_param, bead_xyz_list)
             camera_path = os.path.join(out_dir, f"camera_image_{batch_idx}.tif")
             camera_img = (camera.squeeze().detach().cpu().numpy() * config.get('camera_max_adu', 65535))
             io.imsave(camera_path, camera_img)

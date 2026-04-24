@@ -180,11 +180,27 @@ def main():
 
         # Save as TIFF (like mask_inference)
         beam_profile_tiff_path = os.path.join(output_subdir, "beam_profile.tiff")
-        skimage.io.imsave(beam_profile_tiff_path, (beam_profile))
+        if torch.is_tensor(beam_profile):
+            # .detach() removes it from the graph
+            # .cpu() moves it from GPU to RAM
+            # .numpy() converts it to the format skimage expects
+            beam_profile_np = beam_profile.detach().cpu().numpy()
+        else:
+            beam_profile_np = beam_profile
+
+        skimage.io.imsave(beam_profile_tiff_path, beam_profile_np)
         print(f"Saved beam profile as TIFF to {beam_profile_tiff_path}")
         
         column_sums_tiff_path = os.path.join(output_subdir, "column_sums.tiff")
-        skimage.io.imsave(column_sums_tiff_path, (column_sums_per_image))
+        if torch.is_tensor(column_sums_per_image):
+            # .detach() removes it from the graph
+            # .cpu() moves it from GPU to RAM
+            # .numpy() converts it to the format skimage expects
+            column_sums_per_image_np = column_sums_per_image.detach().cpu().numpy()
+        else:
+            beam_profile_np = beam_profile
+
+        skimage.io.imsave(column_sums_tiff_path, (column_sums_per_image_np))
         print(f"Saved beam profile as TIFF to {column_sums_tiff_path}")
 
         # Save as PNG for easy viewing
@@ -248,7 +264,7 @@ def main():
         plt.rcParams.update({'font.size': 30})
         adj_aspect =  z_step_pixels 
         plt.imshow(column_sums_per_image, aspect=adj_aspect, cmap='viridis')
-        #plt.colorbar(label='')
+        plt.colorbar(label='')
         plt.title('Beam profile collapsed in the dithering axis')
         plt.xlabel('y(mm)')
         plt.ylabel('z(mm)')

@@ -40,6 +40,10 @@ class ParallelEndToEndModel(nn.Module):
         # The engine splits data, runs on GPU 0, 1, 2..., and sums result to GPU 0.
         if self.config.get('SpatialMulitWellLoss', False):
             sensor_image, column_sums = self.physics(mask_param, emitters)
+        if self.config.get('freeze_unet', False):
+            for param in self.unet.parameters():
+                param.requires_grad = False
+            self.unet.eval()
         else:
             sensor_image = self.physics(mask_param, emitters)
         

@@ -1,5 +1,5 @@
 #!/bin/bash
-#BSUB -n 2
+#BSUB -n 4
 #BSUB -W 1:00
 #BSUB -R "rusage[mem=4GB]"
 ##BSUB -R "select[hname!='gpu16']"
