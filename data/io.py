@@ -198,6 +198,7 @@ def expand_config(config, training_results_dir):
     config['4f_magnification'] = config['focal_length_2'] / config['focal_length_1']
     config['scale_factor'] = config['phase_mask_upsample_factor'] * config['4f_magnification']
     config['px'] = config['slm_px'] / config['phase_mask_upsample_factor']
+    pixel_size = config['px']
     if config['lens_approach'] == 'lazy_4f':
         config['N'] = int(config['phase_mask_pixel_size'] * config['scale_factor'])
     else:  
@@ -207,13 +208,34 @@ def expand_config(config, training_results_dir):
     # The 'image_volume' is the total field of view. 
     # The 'bead_volume' is the safe zone where beads can exist (avoiding edges).
     image_volume = config['image_volume']
-    psf_keep_radius = config['psf_keep_radius']
+    
+    # 1. Calculate max defocus depth in meters
+    z_max = image_volume[2] * pixel_size / 2
 
-    bead_vol_x = image_volume[0] - 2 * psf_keep_radius
-    bead_vol_y = image_volume[1] - 2 * psf_keep_radius
+    # 2. Calculate the physical radius of the light cone at z_max
+    theta = np.arcsin(config['numerical_aperture'] / config['refractive_index'])
+    max_blur_radius_meters = z_max * np.tan(theta)
+
+    # 3. Convert to pixels and pad it so the edges safely reach zero
+    max_blur_radius_pixels = np.ceil(max_blur_radius_meters / pixel_size)
+    padding = config.get('psf_padding', 10)# Extra pixels to ensure the diffraction rings trail off to 0
+
+    # 4. Set the new dynamic width (Diameter = 2 * Radius + 1 for center pixel)
+    psf_width_pixels = int(2 * (max_blur_radius_pixels + padding)) | 1
+
+    config['psf_width_pixels'] = psf_width_pixels
+    psf_keep_radius = psf_width_pixels // 2
+    config['psf_keep_radius'] = psf_keep_radius
+    
+    print(f"Auto-calculated PSF canvas width: {psf_width_pixels} x {psf_width_pixels} pixels")
+
+    bead_vol_x = image_volume[0] - psf_width_pixels
+    bead_vol_y = image_volume[1] - psf_width_pixels
     bead_vol_z = image_volume[2] 
 
     config['bead_volume'] = [bead_vol_x, bead_vol_y, bead_vol_z]
+    
+    print(f"Derived bead volume (safe zone for emitters): {config['bead_volume']} pixels")
 
     # 3. Set Spatial Ranges (for the generator)
     # XY: Start at radius, end at image_size - radius
@@ -227,7 +249,7 @@ def expand_config(config, training_results_dir):
     config['particle_spatial_range_z'] = [z_start, z_end]
 
     # 4. PSF Settings
-    config['psf_width_pixels'] = 2 * psf_keep_radius + 1
+    config['psf_width_pixels'] = 2 * psf_width_pixels + 1
     
     z_depth_list = config['z_depth_list']
     Nimgs = len(z_depth_list)
