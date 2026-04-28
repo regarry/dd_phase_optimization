@@ -247,9 +247,6 @@ def expand_config(config, training_results_dir):
     z_start = -(z_length // 2)
     z_end = z_start + z_length
     config['particle_spatial_range_z'] = [z_start, z_end]
-
-    # 4. PSF Settings
-    config['psf_width_pixels'] = 2 * psf_width_pixels + 1
     
     z_depth_list = config['z_depth_list']
     Nimgs = len(z_depth_list)
