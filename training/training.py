@@ -203,7 +203,12 @@ class MultiClassDiceLoss(nn.Module):
         
         # 2. One-Hot Encode the targets to match probs shape
         #    Output: [Batch, Classes, D, H, W]
-        targets_one_hot = F.one_hot(targets, num_classes=logits.shape[1])
+        # .long() converts the tensor to int64, which F.one_hot requires
+        targets_one_hot = F.one_hot(targets.long(), num_classes=logits.shape[1])
+        targets_one_hot = targets_one_hot.squeeze(1)
+        print(f"Shape after one_hot: {targets_one_hot.shape}")
+        print(f"Number of dims: {targets_one_hot.dim()}")
+        
         targets_one_hot = targets_one_hot.permute(0, 3, 1, 2).float()
         
         # 3. Calculate Intersection and Union (per class, per batch)
