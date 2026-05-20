@@ -420,7 +420,7 @@ class OpticsSimulation(nn.Module):
         self.px = config['px']  #the pixel size used
         self.wavelength = config['wavelength']
         self.focal_length_1 = config['focal_length_1']
-        laser_beam_FWHC = config['laser_beam_FWHC']
+        self.laser_beam_FWHM = config.get('laser_beam_FWHM',config.get('laser_beam_FWHC'))
         self.refractive_index = config['refractive_index']
         image_volume = config['image_volume']
         psf_keep_radius = config['psf_keep_radius']
@@ -455,6 +455,7 @@ class OpticsSimulation(nn.Module):
         self.phase_mask_pixel_size = config['phase_mask_pixel_size']    
         self.N = config.get('N', self.phase_mask_upsample_factor * self.phase_mask_pixel_size)
         self.pad_4f = config.get('pad_4f', False)
+        self.aberration = config.get('aberration', False)
         #self.N = self.phase_mask_upsample_factor * self.phase_mask_pixel_size # grid size for the physics calculations
         #self.z_spacing = config.get('z_spacing', 0)
         #self.z_img_mode = config.get('z_img_mode', 'edgecenter')
@@ -492,7 +493,7 @@ class OpticsSimulation(nn.Module):
 
         
         # initialize phase mask
-        incident_gaussian = 1 * np.exp(-(np.square(X) + np.square(Y)) / (2 * laser_beam_FWHC ** 2))
+        incident_gaussian = 1 * np.exp(-(np.square(X) + np.square(Y)) / (2 * self.laser_beam_FWHM ** 2))
         incident_gaussian = torch.from_numpy(incident_gaussian).type(torch.FloatTensor)
         
         # --- Lens 1 (B1) and Propagation Kernel 1 (Q1) ---
@@ -1037,6 +1038,30 @@ class OpticsSimulation(nn.Module):
 
         return U1_cropped
     
+    def get_zernike_phase(grid_size, pixel_size, beam_radius, c5, c13, device="cuda"):
+        # 1. Create Coordinate Grid in Torch
+        coords = torch.linspace(-grid_size/2, grid_size/2, grid_size, device=device) * pixel_size
+        Y, X = torch.meshgrid(coords, coords, indexing='ij')
+
+        # 2. Polar Coordinates
+        r = torch.sqrt(X**2 + Y**2)
+        theta = torch.atan2(Y, X)
+        rho = r / beam_radius
+        
+        # 3. Define Zernike Functions (Differentiable)
+        # Z5: Astigmatism
+        z5 = torch.sqrt(torch.tensor(6.0)) * (rho**2) * torch.sin(2 * theta)
+        # Z13: Spherical
+        z13 = torch.sqrt(torch.tensor(5.0)) * (6 * rho**4 - 6 * rho**2 + 1)
+        
+        # 4. Wavefront Calculation (in Radians)
+        # Applying coefficients (W = c5*z5 + c13*z13) then converting to rads (2*pi)
+        phase_rad = (c5 * z5 + c13 * z13) * 2 * torch.pi
+        
+        # 5. Apply Pupil Mask (rho <= 1)
+        pupil_mask = (rho <= 1.0).float()
+        return phase_rad * pupil_mask
+    
     def against_lens(self, phase_mask):
         Ta = torch.exp(1j * phase_mask) # amplitude transmittance (in our case the slm reflectance)
         Ta = Ta[None, None, :] 
@@ -1065,20 +1090,40 @@ class OpticsSimulation(nn.Module):
         return output_layer
     
     def sample_4f(self, phase_mask):
-        Ta = torch.exp(1j * phase_mask) # amplitude transmittance (in our case the slm reflectance)
-        Ta = Ta[None, None, :]
-        if self.aperature:
-            safe_radius_px = 2 * get_max_aperture_radius_pixels(self.wavelength, self.lensless_prop_distance, self.slm_px)
-            print(f"Applying aperture with radius: {safe_radius_px:.1f} pixels") 
-            # For your setup, this will output ~477.6 pixels
+        """
+        phase_mask: The base phase (e.g., lens or target hologram)
+        """
+        # 1. Generate the Aberration Correction
+        # These coefficients should ideally be class attributes or passed as args
+        if self.aberration:
+            aberration_phase = self.get_zernike_phase(
+                grid_size=phase_mask.shape[-1], 
+                pixel_size=self.px, 
+                beam_radius=self.laser_beam_FWHM*1e6, # microns
+                c5=self.config['c5'], 
+                c13=self.config['c13'],
+                device=phase_mask.device
+            )
 
-            # 3. Apply the aperture to your complex field
-            # Assuming 'complex_field' is your PyTorch tensor right after multiplying the lens phase
-            aperature = self.circular_aperture(self.incident_gaussian, max_pixel_radius=safe_radius_px)
+            # 2. Combine and convert to complex transmittance
+            # Total Phase = Base Phase + Aberration Correction
+            total_phase = phase_mask + aberration_phase
         else:
-            # else aperature is just identity matrix
-            aperature  = torch.ones_like(self.incident_gaussian)
-        Uo = self.incident_gaussian * Ta * aperature # light directly behind the SLM (or in our case reflected from the SLM)
+            total_phase = phase_mask
+        Ta = torch.exp(1j * total_phase) 
+        
+        Ta = Ta[None, None, :] # Add Batch/Channel dims if needed
+
+        if self.aperature:
+            safe_radius_px = 2 * get_max_aperture_radius_pixels(
+                self.wavelength, self.lensless_prop_distance, self.slm_px
+            )
+            aperture = self.circular_aperture(self.incident_gaussian, max_pixel_radius=safe_radius_px)
+        else:
+            aperture = torch.ones_like(self.incident_gaussian)
+
+        # 3. Final Field Calculation
+        Uo = self.incident_gaussian * Ta * aperture
         if self.config['angular_spectrum_method'] == True:
             r_pinhole = self.config.get("lowpass_pinhole_radius_mm", 0) * 1e-3  # Convert mm to meters) # infront of lens
             if  r_pinhole > 0:

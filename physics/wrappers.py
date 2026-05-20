@@ -103,11 +103,8 @@ class MultiGpuSimulation(nn.Module):
 
             # Ensure z_step_pixels is at least 1
             z_step_pixels = max(1, z_step_pixels)
-            if not lens_approach == 'lazy_4f':
-                if phase_mask_upsample_factor > 1:
-                    mask_tensor = OpticsSimulation.expand_matrix_kron_torch(mask_tensor, phase_mask_upsample_factor)
-                else:
-                    mask_tensor = mask_param
+            if not lens_approach == 'lazy_4f' and phase_mask_upsample_factor > 1:
+                mask_tensor = OpticsSimulation.expand_matrix_kron_torch(mask_param, phase_mask_upsample_factor)
             else:
                 mask_tensor = mask_param
         

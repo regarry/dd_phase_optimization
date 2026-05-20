@@ -65,7 +65,7 @@ def inference_one_epoch(model, dataloader, mask_param, config, out_dir):
             if config['num_classes'] == 3:
                 probs = torch.softmax(logits, dim=1)
                 cnn_img = torch.argmax(probs,dim=1)
-                class_data = probs[0, :3, :, :].detach().cpu().numpy()
+                gray_data = probs[0, :3, :, :].detach().cpu().numpy()
                 #rgb_image = np.transpose(class_data, (1, 2, 0))
             elif config['num_classes'] == 1:
                 probs = torch.sigmoid(logits)

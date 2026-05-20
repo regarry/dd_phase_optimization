@@ -34,23 +34,28 @@ class ParallelEndToEndModel(nn.Module):
         mask_param: The learnable Phase Mask (usually on cuda:0)
         emitters:   (Batch, N, 3) Coordinates beads
         """
-        
-        # --- Step 1: Physical Simulation (Multi-GPU) ---
-        # The CPU wrapper calls the physics engine.
-        # The engine splits data, runs on GPU 0, 1, 2..., and sums result to GPU 0.
-        if self.config.get('SpatialMulitWellLoss', False):
-            sensor_image, column_sums = self.physics(mask_param, emitters)
+        # --- Handle UNet State First ---
         if self.config.get('freeze_unet', False):
             for param in self.unet.parameters():
                 param.requires_grad = False
             self.unet.eval()
         else:
+            # Ensure it's in training mode if not frozen
+            self.unet.train()
+
+        # --- Step 1: Physical Simulation (Multi-GPU) ---
+        # Run physics once and unpack based on your configuration rules
+        if self.config.get('SpatialMulitWellLoss', False):
+            sensor_image, column_sums = self.physics(mask_param, emitters)
+        else:
             sensor_image = self.physics(mask_param, emitters)
+            column_sums = None
         
         # --- Step 2: Bead Prediction (Single GPU) ---
-        # The image is now on cuda:0. We pass it to the UNet.
+        # sensor_image is now guaranteed to be a single Tensor on cuda:0
         bead_prediction = self.unet(sensor_image)
         
+        # --- Step 3: Balanced Returns ---
         if self.config.get('SpatialMulitWellLoss', False):
             return bead_prediction, column_sums
         else:
