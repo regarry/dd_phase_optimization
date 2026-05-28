@@ -1,7 +1,7 @@
 # ==========================================
 # 5. BEAD & SAMPLE GENERATION
 # ==========================================
-num_particles_range: [400, 401] # [min, max] emitters per image. Strong GPU: [450, 550]
+num_particles_range: [2000, 2001] # [min, max] emitters per image. Strong GPU: [450, 550]
 bead_radius: 0.5          # pixels 1.0 default
 z_coupled_ratio: 0.5
 z_coupled_spacing_range: [1, 5] # need to change the code so that the z coupled beads are only generated around the in focus plane
@@ -12,8 +12,8 @@ z_gaussian_mu: 0.0 # need to finish this
 # 1. OPTIMIZATION & TRAINING LOOP
 # ==========================================
 random_seed: 21
-ntrain: 1  #960, 384          # default 640, how many bead volumes per epoch, multiple of 32 is nice
-nvalid: 1 #128             # default 128
+ntrain: 384  #960, 384          # default 640, how many bead volumes per epoch, multiple of 32 is nice
+nvalid: 128 #128             # default 128
 
 batch_size: 1              # Training batch size
 accumulation_steps: 32 #32   # Gradient accumulation steps to simulate larger batch sizes
@@ -37,12 +37,12 @@ early_stopping_min_delta: 1.0e-5 # Minimum change in the monitored quantity to q
 weights: [1.0, 1.0, 2.0]   # cross entropy loss weights (must be floats)
 tv_loss_weight: 0.0        # Weight for the total variation loss of the phase mask
 z_range_cost_function: [0, 0] # the range +- from z=0 that is considered ground truth
-bce_loss_weight: 0.0
-dice_loss_weight: 0.5
+bce_loss_weight: 1.0
+dice_loss_weight: 8.0
 mse_loss_weight : 0.0
-spatial_multi_well_loss_weight: 0.5
+spatial_multi_well_loss_weight: 0.0
 mse_loss: False
-SpatialMulitWellLoss: True # concentrate light to a focus and then push remaining light away from sample
+SpatialMulitWellLoss: False # concentrate light to a focus and then push remaining light away from sample
 freeze_unet: False # whether to freeze the unet weights during training (only optimize the phase mask)
 #disable_camera_simulation: True # not working yet
 
@@ -101,7 +101,7 @@ phase_mask_upsample_factor: 1 # Scale factor for phase mask upsampling (simulati
 # ==========================================
 
 # ***************** want to change this to input meters not px?
-image_volume: [128, 128, 256] # the first two dimensions should be powers of 2 for the u-net [y, x, z] volume of imaging in px (camera coordinates)
+image_volume: [64, 1024, 128] # the first two dimensions should be powers of 2 for the u-net [y, x, z] volume of imaging in px (camera coordinates)
 ratio_input_output_image_size: 1 # default with Unet 1, with ResNet 4
 
 # ==========================================

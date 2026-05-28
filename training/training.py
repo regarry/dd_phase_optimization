@@ -260,6 +260,33 @@ class DynamicSpatialWellLoss(nn.Module):
         # We want the optimizer to focus on high-intensity areas in the penalty zone
         return torch.mean(norm_profile * cost_map)
     
+def plot_sidelobe_curve(loss_module):
+    if loss_module.last_cost_map is None:
+        print("Error: Run a forward pass through the loss function first to generate data!")
+        return
+
+    # Grab the exact array calculated inside your forward pass
+    y_values = loss_module.last_cost_map.numpy()
+    
+    # Recreate the X-axis labels (Minus to Plus) based purely on the array's size
+    num_cols = len(y_values)
+    center = (num_cols - 1) / 2
+    x_values = torch.arange(num_cols).float().numpy() - center
+    
+    # Plotting
+    plt.figure(figsize=(9, 4.5))
+    plt.plot(x_values, y_values, color='indigo', linewidth=2, label='Internal Cost Function Shape')
+    
+    # Visual cues using the module's actual parameters
+    plt.axvline(x=loss_module.x, color='g', linestyle='--', alpha=0.5, label='x_bound')
+    plt.axvline(x=-loss_module.x, color='g', linestyle='--')
+    
+    plt.title("Actual Internal Cost Map Curve")
+    plt.xlabel("Distance from Center (- to +)")
+    plt.ylabel("Cost")
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    plt.show()    
 
 def main():
     start_time = time.time()

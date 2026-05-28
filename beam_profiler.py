@@ -255,35 +255,52 @@ def main():
         column_visual_path = os.path.join(output_subdir,'column_sums_visualization_in_beam_profiler.png')
         num_slices, num_cols = column_sums_per_image.shape
 
-        # Define the figure. 
-        # We use a ratio to keep the window size reasonable (e.g., max 10 inches)
-        fig_width = 12
-        fig_height = fig_width * (num_slices * z_step_pixels/ num_cols)
+        # 1. SWAP FIGURE DIMENSIONS FOR RE-ORIENTATION
+        # Since we are rotating 90 degrees, width and height logic swaps
+        fig_height = 12
+        fig_width = fig_height * (num_slices * z_step_pixels / num_cols)
 
         plt.figure(figsize=(fig_width, fig_height))
         plt.rcParams.update({'font.size': 30})
-        adj_aspect =  z_step_pixels 
-        plt.imshow(column_sums_per_image, aspect=adj_aspect, cmap='viridis')
+        
+        # 2. ROTATE THE DATA
+        # Transposing (.T) and using origin='lower' effectively rotates it 90 degrees counterclockwise.
+        # Note: Depending on your array's memory layout, you might want origin='upper' or np.rot90, 
+        # but .T with origin='lower' is standard for mapping matrix rows to the Y-axis.
+        adj_aspect = 1 / z_step_pixels # Aspect ratio inverts because axes swapped
+        plt.imshow(column_sums_per_image.T, aspect=adj_aspect, origin='lower', cmap='viridis')
         plt.colorbar(label='')
-        plt.title('Beam profile collapsed in the dithering axis')
-        plt.xlabel('y(mm)')
-        plt.ylabel('z(mm)')
+        
+        #save raw column sums visual as a tiff
+        column_sums_visual_tiff_path = os.path.join(output_subdir, "column_sums_visual.tiff")
+        skimage.io.imsave(column_sums_visual_tiff_path, normalize_to_uint16(column_sums_per_image.T))
+        
+        # 3. SWAP LABELS AND TICKS
+        # What was on the Y-axis (z) is now on the X-axis, and vice versa.
+        plt.xlabel('z(mm)')
+        plt.ylabel('y(mm)')
+        
+        # Set X-ticks (formerly Z-ticks)
         num_z_ticks = 21
-        plt.yticks(
+        plt.xticks(
             ticks=np.linspace(0, len(z_range_mm)-1, num=num_z_ticks),
             labels=[f"{z_range_mm[int(i)]:.2f}" for i in np.linspace(0, len(z_range_mm)-1, num=num_z_ticks)]
         )
+        
+        # Set Y-ticks (formerly Y-ticks on the X-axis)
         num_y_ticks = 5
-        # For y-axis ticks, we need to map pixel indices to mm values
         y_tick_pixels = np.linspace(0, len(y_range_mm)-1, num=num_y_ticks)
         y_tick_mm_labels = [f"{y_range_mm[int(j)]:.2f}" for j in y_tick_pixels]
-        plt.xticks(
+        plt.yticks(
             ticks=y_tick_pixels,
             labels=y_tick_mm_labels
-    )
-        plt.savefig(column_visual_path) # Save the plot as an image file
-        plt.close() # Close the plot to prevent it from displaying immediately in some environments
+        )
         
+        # 4. PREVENT CLIPPING
+        # bbox_inches='tight' tells matplotlib to dynamically calculate the bounding box 
+        # including all large 30pt fonts so nothing gets cut off.
+        plt.savefig(column_visual_path, bbox_inches='tight') 
+        plt.close()
 
         # save the config used for this test
         config_output_path = os.path.join(output_subdir, "config.yaml")
