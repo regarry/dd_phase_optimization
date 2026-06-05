@@ -5,7 +5,7 @@
 ##BSUB -R "select[hname!='gpu16']"
 #BSUB -q short_gpu
 #BSUB -gpu "num=1:mode=shared:mps=no"
-##BSUB -R "select[p100]"
+##BSUB -R "select[a100]"
 #BSUB -J inference
 #BSUB -o ./logs/.%J
 #BSUB -e ./logs/.%J

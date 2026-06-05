@@ -1,8 +1,9 @@
+import math
+import numpy as np
 import torch
 import torch.nn as nn
-import math
 from physics.simulation import OpticsSimulation
-import numpy as np
+
 
 class MultiGpuSimulation(nn.Module):
     """

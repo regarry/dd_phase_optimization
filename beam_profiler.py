@@ -10,7 +10,7 @@ from data.io import load_config, normalize_to_uint16
 #from beam_profile_gen import BeamProfiler
 from physics.bessel import generate_axicon_phase_mask
 from physics.simulation import OpticsSimulation
-
+plt.rcParams['image.interpolation'] = 'nearest'
 def main():
     parser = argparse.ArgumentParser(description="Test light propagation with optional axicon phase mask and save beam profile.")
     parser.add_argument("--config", type=str, required=False, help="Path to config.yaml")
@@ -257,18 +257,26 @@ def main():
 
         # 1. SWAP FIGURE DIMENSIONS FOR RE-ORIENTATION
         # Since we are rotating 90 degrees, width and height logic swaps
-        fig_height = 12
+        """ fig_height = 12
         fig_width = fig_height * (num_slices * z_step_pixels / num_cols)
 
         plt.figure(figsize=(fig_width, fig_height))
-        plt.rcParams.update({'font.size': 30})
+        plt.rcParams.update({'font.size': 30}) """
+        
+        # Let Matplotlib handle bounding dimensions. We set a solid base height.
+        fig_height = 10
+        fig_width = 40
+        
+        plt.figure(figsize=(fig_width, fig_height))
+        plt.rcParams.update({'font.size': 20}) 
         
         # 2. ROTATE THE DATA
-        # Transposing (.T) and using origin='lower' effectively rotates it 90 degrees counterclockwise.
-        # Note: Depending on your array's memory layout, you might want origin='upper' or np.rot90, 
-        # but .T with origin='lower' is standard for mapping matrix rows to the Y-axis.
+        # np.flipud() safely flips the rows vertically, and .T transposes it.
+        # Together with origin='lower', this achieves a clean 90-degree clockwise rotation.
+        rotated_data = np.flipud(column_sums_per_image).T
+        
         adj_aspect = 1 / z_step_pixels # Aspect ratio inverts because axes swapped
-        plt.imshow(column_sums_per_image.T, aspect=adj_aspect, origin='lower', cmap='viridis')
+        plt.imshow(rotated_data, aspect=adj_aspect, origin='lower', cmap='viridis', interpolation='nearest')
         plt.colorbar(label='')
         
         #save raw column sums visual as a tiff
@@ -277,11 +285,11 @@ def main():
         
         # 3. SWAP LABELS AND TICKS
         # What was on the Y-axis (z) is now on the X-axis, and vice versa.
-        plt.xlabel('z(mm)')
-        plt.ylabel('y(mm)')
+        plt.xlabel('z (mm)')
+        plt.ylabel('y (mm)')
         
         # Set X-ticks (formerly Z-ticks)
-        num_z_ticks = 21
+        num_z_ticks = 11
         plt.xticks(
             ticks=np.linspace(0, len(z_range_mm)-1, num=num_z_ticks),
             labels=[f"{z_range_mm[int(i)]:.2f}" for i in np.linspace(0, len(z_range_mm)-1, num=num_z_ticks)]
@@ -299,6 +307,7 @@ def main():
         # 4. PREVENT CLIPPING
         # bbox_inches='tight' tells matplotlib to dynamically calculate the bounding box 
         # including all large 30pt fonts so nothing gets cut off.
+        plt.tight_layout()
         plt.savefig(column_visual_path, bbox_inches='tight') 
         plt.close()
 

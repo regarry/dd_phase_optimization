@@ -11,8 +11,8 @@ if __name__ == "__main__":
     #training_folder = "./training_results/800_beads_phase_model_20251021-111735"
     #training_folder = "./training_results/20260211-162226"
     
-    training_folder = "./training_results/20260527-173800"
-    epoch = 84
+    training_folder = "./training_results/20260603-135249"
+    epoch = 90
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     inference_results = os.path.join(training_folder, timestamp)
     beam_profiles = inference_results
@@ -34,6 +34,19 @@ if __name__ == "__main__":
     print("runprofilerinference: ", mask_path)
     #mask_path = os.path.join(training_folder, f"mask_phase_epoch_{epoch}.tiff")
 
+        # Run beam_profiler.py
+    config_path = os.path.join(training_folder, "config.yaml")
+    profiler_cmd = [
+        "python", "beam_profiler.py",
+        "--output_dir", beam_profiles,
+        "--config", config_path,
+        "--mask", mask_path
+    ]
+    
+    print("Running beam_profiler.py...")
+    subprocess.run(profiler_cmd, check=True)
+    print("Beam profiling completed.")
+    
     # Run mask_inference.py
     inference_cmd = [
         "python", "inference.py",
@@ -49,18 +62,7 @@ if __name__ == "__main__":
     subprocess.run(inference_cmd, check=True)
     print("Inference completed.")
     
-    # Run beam_profiler.py
-    config_path = os.path.join(training_folder, "config.yaml")
-    profiler_cmd = [
-        "python", "beam_profiler.py",
-        "--output_dir", beam_profiles,
-        "--config", config_path,
-        "--mask", mask_path
-    ]
-    
-    print("Running beam_profiler.py...")
-    subprocess.run(profiler_cmd, check=True)
-    print("Beam profiling completed.")
+
     
     
     

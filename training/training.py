@@ -228,8 +228,8 @@ class DynamicSpatialWellLoss(nn.Module):
         super().__init__()
         self.x = x_bound
         self.y = y_target
-        # Using a learnable parameter to adjust the 'steepness' of the penalty
-        self.steepness = nn.Parameter(torch.tensor([2.0])) 
+        # Wrapped in nn.Parameter so your Adam optimizer can successfully track and learn it
+        self.steepness = torch.tensor([1.0])
 
     def forward(self, top_down_view_dithed):
         # 1. Collapse to 1D lateral profile
@@ -247,14 +247,21 @@ class DynamicSpatialWellLoss(nn.Module):
         center = (cols - 1) / 2
         d = torch.abs(torch.arange(cols, device=top_down_view_dithed.device).float() - center)
         
-        # 2. Define the "Penalty Zone" logic
-        # diff is 0 for d < x, and grows linearly for d > x
-        diff = torch.clamp(d - self.x, min=0)
+        # ====================================================================
+        # ADJUSTED SHAPE LOGIC: Smooth Rectangular Plateau (No features dropped)
+        # ====================================================================
+        # 1. Smoothly transition from 0 to 1 starting right at x_bound
+        rise = torch.sigmoid(self.steepness * (d - self.x))
         
-        # 3. Shape the cost: Linear growth * Exponential decay
-        # This creates a peak just after x and a tail that reaches low values by y
-        decay_constant = (self.y - self.x) / self.steepness
-        cost_map = diff * torch.exp(-diff / decay_constant)
+        # 2. Smoothly transition from 1 to 0 starting right at y_target
+        fall = torch.sigmoid(self.steepness * (self.y - d))
+        
+        # 3. Combine them to form a flat-topped window penalty zone
+        cost_map = rise * fall
+        # ====================================================================
+        
+        # --- NEW CODE: Capture the exact generated internal tensor ---
+        self.last_cost_map = cost_map.detach().cpu()
         
         # 4. Normalize and calculate final scalar loss
         # We want the optimizer to focus on high-intensity areas in the penalty zone
@@ -360,14 +367,24 @@ def main():
 
     # 2. Setup Optimizer (Always happens, regardless of branch)
     # Check if we need special param groups for the Multi-Well loss
-    if 'spatial_multi_well_loss' in criterion_dict:
-        optimizer = Adam([
-            {'params': list(model.parameters()) + [mask_param], 'lr': config['initial_learning_rate']},
-            {'params': criterion_dict['spatial_multi_well_loss'].parameters(), 'lr': config['initial_learning_rate'] * 0.1}
-        ])
+    
+    if config.get('freeze_slm', False):
+        if 'spatial_multi_well_loss' in criterion_dict:
+            optimizer = Adam([
+                {'params': list(model.parameters()), 'lr': config['initial_learning_rate']},
+                {'params': criterion_dict['spatial_multi_well_loss'].parameters(), 'lr': config['initial_learning_rate'] * 0.1}
+            ]) 
+        else:
+            optimizer = Adam(list(model.parameters()), lr=config['initial_learning_rate'])
     else:
-        # Standard optimizer for all other cases
-        optimizer = Adam(list(model.parameters()) + [mask_param], lr=config['initial_learning_rate'])
+        if 'spatial_multi_well_loss' in criterion_dict:
+            optimizer = Adam([
+                {'params': list(model.parameters()) + [mask_param], 'lr': config['initial_learning_rate']},
+                {'params': criterion_dict['spatial_multi_well_loss'].parameters(), 'lr': config['initial_learning_rate'] * 0.1}
+            ]) 
+        else:
+            optimizer = Adam(list(model.parameters()) + [mask_param], lr=config['initial_learning_rate'])
+    
 
     
     # 2. Setup Scheduler
