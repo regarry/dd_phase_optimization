@@ -264,11 +264,11 @@ def main():
         plt.rcParams.update({'font.size': 30}) """
         
         # Let Matplotlib handle bounding dimensions. We set a solid base height.
-        fig_height = 10
-        fig_width = 40
+        fig_height = 12
+        fig_width = 12
         
         plt.figure(figsize=(fig_width, fig_height))
-        plt.rcParams.update({'font.size': 20}) 
+        #plt.rcParams.update({'font.size': 20}) 
         
         # 2. ROTATE THE DATA
         # np.flipud() safely flips the rows vertically, and .T transposes it.
@@ -277,38 +277,39 @@ def main():
         
         adj_aspect = 1 / z_step_pixels # Aspect ratio inverts because axes swapped
         plt.imshow(rotated_data, aspect=adj_aspect, origin='lower', cmap='viridis', interpolation='nearest')
-        plt.colorbar(label='')
+        plt.xlabel('z (mm)')
+        plt.ylabel('y (mm)')
+        #plt.colorbar(label='')
         
         #save raw column sums visual as a tiff
         column_sums_visual_tiff_path = os.path.join(output_subdir, "column_sums_visual.tiff")
         skimage.io.imsave(column_sums_visual_tiff_path, normalize_to_uint16(column_sums_per_image.T))
         
-        # 3. SWAP LABELS AND TICKS
-        # What was on the Y-axis (z) is now on the X-axis, and vice versa.
-        plt.xlabel('z (mm)')
-        plt.ylabel('y (mm)')
-        
-        # Set X-ticks (formerly Z-ticks)
+      # Set X-ticks (formerly Z-ticks)
         num_z_ticks = 11
+        z_tick_indices = np.linspace(0, len(z_range_mm) - 1, num=num_z_ticks)
+        
+        # FIX: Use round() instead of int() to stop truncation errors
         plt.xticks(
-            ticks=np.linspace(0, len(z_range_mm)-1, num=num_z_ticks),
-            labels=[f"{z_range_mm[int(i)]:.2f}" for i in np.linspace(0, len(z_range_mm)-1, num=num_z_ticks)]
+            ticks=z_tick_indices,
+            labels=[f"{z_range_mm[int(round(i))]:.2f}" for i in z_tick_indices]
         )
         
         # Set Y-ticks (formerly Y-ticks on the X-axis)
         num_y_ticks = 5
-        y_tick_pixels = np.linspace(0, len(y_range_mm)-1, num=num_y_ticks)
-        y_tick_mm_labels = [f"{y_range_mm[int(j)]:.2f}" for j in y_tick_pixels]
+        y_tick_pixels = np.linspace(0, len(y_range_mm) - 1, num=num_y_ticks)
+        
+        # FIX: Use round() here as well to keep Y-axis intervals perfectly symmetrical
         plt.yticks(
             ticks=y_tick_pixels,
-            labels=y_tick_mm_labels
+            labels=[f"{y_range_mm[int(round(j))]:.2f}" for j in y_tick_pixels]
         )
         
         # 4. PREVENT CLIPPING
         # bbox_inches='tight' tells matplotlib to dynamically calculate the bounding box 
         # including all large 30pt fonts so nothing gets cut off.
         plt.tight_layout()
-        plt.savefig(column_visual_path, bbox_inches='tight') 
+        plt.savefig(column_visual_path, bbox_inches='tight', dpi=600) 
         plt.close()
 
         # save the config used for this test

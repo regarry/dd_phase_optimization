@@ -204,6 +204,11 @@ def expand_config(config, training_results_dir):
     else:  
         config['N'] = config['phase_mask_upsample_factor'] * config['phase_mask_pixel_size']
 
+    if config["spatial_multi_well_loss_weight"] > 0:
+        config["SpatialMulitWellLoss"] = True
+    
+    if config["mse_loss_weight"] > 0:
+        config["mse_loss"] = True
     # 2. Derive Bead Volume from Image Volume
     # The 'image_volume' is the total field of view. 
     # The 'bead_volume' is the safe zone where beads can exist (avoiding edges).
