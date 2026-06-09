@@ -268,7 +268,7 @@ def main():
         fig_width = 12
         
         plt.figure(figsize=(fig_width, fig_height))
-        #plt.rcParams.update({'font.size': 20}) 
+        plt.rcParams.update({'font.size': 20}) 
         
         # 2. ROTATE THE DATA
         # np.flipud() safely flips the rows vertically, and .T transposes it.
@@ -287,24 +287,34 @@ def main():
         
       # Set X-ticks (formerly Z-ticks)
         num_z_ticks = 11
-        z_tick_indices = np.linspace(0, len(z_range_mm) - 1, num=num_z_ticks)
+        # =====================================================================
+        # FIXED SYMMETRIC 1-DECIMAL TICK GENERATION
+        # =====================================================================
+        # 1. Generate clean, mathematically symmetric values for Z (X-axis)
+        z_tick_vals = np.linspace(z_min_mm, z_max_mm, num=11)
         
-        # FIX: Use round() instead of int() to stop truncation errors
+        # Map physical values into coordinate slice-index space: (val - min) / step
+        # Since rotated_data is sized by num_slices along the matrix columns
+        real_z_min = z_min_pixels * px_mm
+        z_tick_indices = (z_tick_vals - real_z_min) / (z_step_pixels * px_mm)
+        
         plt.xticks(
             ticks=z_tick_indices,
-            labels=[f"{z_range_mm[int(round(i))]:.2f}" for i in z_tick_indices]
+            labels=[f"{val:.1f}" for val in z_tick_vals]
         )
         
-        # Set Y-ticks (formerly Y-ticks on the X-axis)
-        num_y_ticks = 5
-        y_tick_pixels = np.linspace(0, len(y_range_mm) - 1, num=num_y_ticks)
+        # 2. Generate clean, mathematically symmetric values for Y (Y-axis)
+        y_tick_vals = np.linspace(y_min_mm, y_max_mm, num=5)
         
-        # FIX: Use round() here as well to keep Y-axis intervals perfectly symmetrical
+        # Map physical values into row-index space: (val - min) / step
+        # Matrix Y rows are packed 1-to-1 pixel wise with original resolution
+        real_y_min = y_min_pixels * px_mm
+        y_tick_pixels = (y_tick_vals - real_y_min) / px_mm
+        
         plt.yticks(
             ticks=y_tick_pixels,
-            labels=[f"{y_range_mm[int(round(j))]:.2f}" for j in y_tick_pixels]
+            labels=[f"{val:.1f}" for val in y_tick_vals]
         )
-        
         # 4. PREVENT CLIPPING
         # bbox_inches='tight' tells matplotlib to dynamically calculate the bounding box 
         # including all large 30pt fonts so nothing gets cut off.

@@ -212,8 +212,9 @@ def expand_config(config, training_results_dir):
     # 2. Derive Bead Volume from Image Volume
     # The 'image_volume' is the total field of view. 
     # The 'bead_volume' is the safe zone where beads can exist (avoiding edges).
-    image_volume = config['image_volume']
+    image_volume = config['image_volume'] # the first two dimensions should be powers of 2 for the u-net [y, x, z] volume of imaging in px (camera coordinates)
     
+     
     # 1. Calculate max defocus depth in meters
     z_max = image_volume[2] * pixel_size / 2
 
@@ -234,11 +235,17 @@ def expand_config(config, training_results_dir):
     
     print(f"Auto-calculated PSF canvas width: {psf_width_pixels} x {psf_width_pixels} pixels")
 
-    bead_vol_x = image_volume[0] - psf_width_pixels
-    bead_vol_y = image_volume[1] - psf_width_pixels
+    # image volume the first two dimensions should be powers of 2 for the u-net [y, x, z] volume of imaging in px (camera coordinates)
+    # round the psf width to the nearest power of 2 to ensure the PSF fits within the image y volume
+    image_volume[0] = int(2 ** np.ceil(np.log2(psf_width_pixels)))
+    config['image_volume'] = image_volume
+    print(f"Adjusted image volume to ensure PSF fits: {image_volume} pixels (y, x, z)")
+    print(f'PSF Width in pixels: {psf_width_pixels}, which corresponds to a max blur radius of {max_blur_radius_pixels:.1f} pixels at the maximum defocus depth.')
+    bead_vol_y = image_volume[0] - psf_width_pixels # this one should be auto set to prevent errors with larger psfs
+    bead_vol_x = image_volume[1] - psf_width_pixels
     bead_vol_z = image_volume[2] 
 
-    config['bead_volume'] = [bead_vol_x, bead_vol_y, bead_vol_z]
+    config['bead_volume'] = [bead_vol_y, bead_vol_x, bead_vol_z]
     
     print(f"Derived bead volume (safe zone for emitters): {config['bead_volume']} pixels")
 
