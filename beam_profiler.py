@@ -10,14 +10,15 @@ from data.io import load_config, normalize_to_uint16
 #from beam_profile_gen import BeamProfiler
 from physics.bessel import generate_axicon_phase_mask
 from physics.simulation import OpticsSimulation
+from physics.masks import get_initial_phase_mask
 plt.rcParams['image.interpolation'] = 'nearest'
 def main():
     parser = argparse.ArgumentParser(description="Test light propagation with optional axicon phase mask and save beam profile.")
     parser.add_argument("--config", type=str, required=False, help="Path to config.yaml")
     parser.add_argument("--mask", type=str, default="", help="Optional: path to phase mask tiff (default: zeros)")
     parser.add_argument("--output_dir", type=str, default="beam_profile_test", help="Output directory")
-    parser.add_argument("--fresnel_lens_pattern", action="store_true", help="Use Fresnel lens phase mask")
-    parser.add_argument("--bessel_angle", type=float, default=0.0, help="Bessel cone angle in degrees (default: 0, no axicon)")
+    #parser.add_argument("--fresnel_lens_pattern", action="store_true", help="Use Fresnel lens phase mask")
+    #parser.add_argument("--bessel_angle", type=float, default=0.0, help="Bessel cone angle in degrees (default: 0, no axicon)")
     parser.add_argument("--gen_phase_mask", type=str, default="", help="Optional: 'axicon', 'fresnel_lens', or 'empty' to generate a phase mask pattern")
     args = parser.parse_args()
 
@@ -80,29 +81,36 @@ def main():
         print(f"Loading phase mask from {args.mask}")
         mask_np = skimage.io.imread(args.mask).astype(np.float32)
         
-    elif args.bessel_angle > 0 and args.gen_phase_mask == "axicon":
-        print(f"Generating axicon phase mask: {N}x{N}, {slm_px*1e6}um, {wavelength_nm}nm, angle={args.bessel_angle}deg")
+    elif args.gen_phase_mask == "axicon":
+        """ print(f"Generating axicon phase mask: {N}x{N}, {slm_px*1e6}um, {wavelength_nm}nm, angle={args.bessel_angle}deg")
         mask_np = generate_axicon_phase_mask(
             mask_resolution_pixels=(N, N),
             pixel_pitch_um=slm_px*1.0e6,
             wavelength_nm=wavelength_nm,
             bessel_half_cone_angle_degrees=args.bessel_angle
-        )
+        ) """
+        #config['bessel_half_cone_angle_degrees'] = args.bessel_angle
+        config['initial_phase_mask'] = 'axicon'
+        mask_np = get_initial_phase_mask(config)
         
     elif args.gen_phase_mask == "fresnel_lens":
-        #print(config)
+        """ #print(config)
         focal_length = config['lensless_prop_distance'] # in meters
         print(f"Generating a Fresnel lens phase mask: {N}x{N}, {slm_px*1e6}um, {wavelength_nm}nm, focal_length={focal_length}m")
         # Generate Fresnel lens phase mask
         yy, xx = np.meshgrid(np.arange(N) - N // 2, np.arange(N) - N // 2)
         r = np.sqrt(xx**2 + yy**2) * slm_px  # radius in meters
         fresnel_phase = -(np.pi / (wavelength_nm * 1e-9 * focal_length)) * (r ** 2)
-        mask_np = np.mod(fresnel_phase, 2 * np.pi).astype(np.float32)
+        mask_np = np.mod(fresnel_phase, 2 * np.pi).astype(np.float32) """
+        config['initial_phase_mask'] = 'lens'
+        config['lensless_prop_distance'] = config['fresnel_lens_focal_length']
+        mask_np = get_initial_phase_mask(config)
    
     elif args.gen_phase_mask == "empty":
-        print("Using empty phase mask (zeros)")
-        mask_np = np.zeros((N, N), dtype=np.float32)
-        
+        #print("Using empty phase mask (zeros)")
+        #mask_np = np.zeros((N, N), dtype=np.float32)
+        config['initial_phase_mask'] = 'empty'
+        mask_np = get_initial_phase_mask(config)
     else:
         print("No phase mask specified")
         exit()
@@ -313,7 +321,7 @@ def main():
         
         plt.yticks(
             ticks=y_tick_pixels,
-            labels=[f"{val:.1f}" for val in y_tick_vals]
+            labels=[f"{val:.2f}" for val in y_tick_vals]
         )
         # 4. PREVENT CLIPPING
         # bbox_inches='tight' tells matplotlib to dynamically calculate the bounding box 

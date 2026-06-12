@@ -100,7 +100,7 @@ phase_mask_upsample_factor: 1 # Scale factor for phase mask upsampling (simulati
 # ==========================================
 
 # ***************** want to change this to input meters not px?
-image_volume: [0, 128, 100] # the first two dimensions should be powers of 2 for the u-net [y, x, z] volume of imaging in px (camera coordinates)
+image_volume: [0, 128, 240] # the first two dimensions should be powers of 2 for the u-net [y, x, z] volume of imaging in px (camera coordinates)
 ratio_input_output_image_size: 1 # default with Unet 1, with ResNet 4
 
 # ==========================================

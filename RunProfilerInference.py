@@ -73,8 +73,8 @@ if __name__ == "__main__":
         "python", "beam_profiler.py",
         "--output_dir", axicon_beam_profiles,
         "--config", config_path,
-        "--gen_phase_mask", "axicon",
-        "--bessel_angle", "4.0" # 0.4 deg x 4
+        "--gen_phase_mask", "axicon"
+        #"--bessel_angle", "4.0" # 0.4 deg x 4
     ]
     subprocess.run(axicon_profiler_cmd, check=True)
     
