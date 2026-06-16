@@ -477,6 +477,24 @@ def main():
                 # 5. Convert to standard 8-bit image format (uint8 array)
                 # Move it off the GPU, convert to numpy, and change type to uint8
                 slm_display_image = rounded_bits.cpu().numpy().astype(np.uint8)
+                
+            def convert_to_8bit_image(mask_param):
+                with torch.no_grad():
+                    max_stroke = 2 * np.pi # Or whatever your physical SLM's max stroke is
+                    
+                    # 2. Wrap the raw parameter just like in training
+                    wrapped_phase = torch.remainder(mask_param, max_stroke)
+                    
+                    # 3. Scale it to the 8-bit 0-255 range
+                    scaled_to_bits = (wrapped_phase / max_stroke) * 255.0
+                    
+                    # 4. Round to exact integer levels
+                    rounded_bits = torch.round(scaled_to_bits)
+                    
+                    # 5. Convert to standard 8-bit image format (uint8 array)
+                    # Move it off the GPU, convert to numpy, and change type to uint8
+                    slm_display_image = rounded_bits.cpu().numpy().astype(np.uint8)
+                    return slm_display_image
             
             # Save artifacts
             np.savetxt(os.path.join(training_results_dir, 'train_losses.txt'), train_losses, delimiter=',')
