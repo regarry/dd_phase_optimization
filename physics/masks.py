@@ -47,6 +47,7 @@ def get_initial_phase_mask(config):
         lens_phase = (k / (2 * focal_length)) * (X**2 + Y**2) # Quadratic phase
         # 3. WRAP THE PHASE to [0, 2*pi] to make it a Fresnel lens
         fresnel_phase = np.mod(lens_phase, 2 * np.pi)
+        fresnel_phase = 2 * np.pi - fresnel_phase # Invert phase for SLM compatibility
         return fresnel_phase.astype(np.float32)
 
     # 3. Cylindrical Lens
@@ -70,6 +71,7 @@ def get_initial_phase_mask(config):
             raise ValueError("cylinder_axis in config must be 'x' or 'y'")
         
         wrapped_cylinder_phase = np.mod(cylinder_phase, 2 * np.pi)
+        wrapped_cylinder_phase = 2 * np.pi - wrapped_cylinder_phase # Invert phase for SLM compatibility
         return wrapped_cylinder_phase.astype(np.float32)
 
     # 4. Airy Beam (Cubic Phase Mask)
@@ -84,6 +86,7 @@ def get_initial_phase_mask(config):
         alpha = config.get('airy_alpha', 1e-4)
         airy_phase = alpha * (X**3 + Y**3)
         wrapped_airy_phase = np.mod(airy_phase, 2 * np.pi)
+        wrapped_airy_phase = 2 * np.pi - wrapped_airy_phase # Invert phase for SLM compatibility
         return wrapped_airy_phase.astype(np.float32)
 
     # 5. Flat / Empty initialization
