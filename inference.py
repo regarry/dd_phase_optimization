@@ -109,35 +109,34 @@ def run_inference(input_dir, epoch, res_dir="inference_results", num_inferences=
         val_loss_file = os.path.join(input_dir, "val_losses.txt")
         if not os.path.exists(train_loss_file):
             print(f"train_losses.txt not found in {input_dir}")
-        elif not os.path.exists(val_loss_file) and os.path.exists(train_loss_file):
-            print(f"val_losses.txt not found in {input_dir}. Plotting only training loss.")
-            with open(train_loss_file, "r") as f:
-                train_losses = [float(line.strip()) for line in f if line.strip()]
-            plt.figure()
-            plt.plot(train_losses, label="Training Loss")
-            plt.xlabel("Epoch or Iteration")
-            plt.ylabel("Loss")
-            plt.title("Log Loss Over Time")
-            plt.yscale("log")
-            plt.legend()
-            save_path = os.path.join(out_dir, "loss_plot.png")
-            plt.savefig(save_path)
-            print(f"Loss plot saved to {save_path}")
         else:
+            # 1. Reset the font size to default so it isn't massive and cramped
+            plt.rcdefaults()
+            plt.figure(figsize=(8, 5)) # Standard, comfortable figure size
+            
             with open(train_loss_file, "r") as f:
                 train_losses = [float(line.strip()) for line in f if line.strip()]
-            with open(val_loss_file, "r") as f:
-                val_losses = [float(line.strip()) for line in f if line.strip()]
-            plt.figure()
             plt.plot(train_losses, label="Training Loss")
-            plt.plot(val_losses, label="Validation Loss")
+            
+            if os.path.exists(val_loss_file):
+                with open(val_loss_file, "r") as f:
+                    val_losses = [float(line.strip()) for line in f if line.strip()]
+                plt.plot(val_losses, label="Validation Loss")
+            else:
+                print(f"val_losses.txt not found in {input_dir}. Plotting only training loss.")
+            
             plt.xlabel("Epoch or Iteration")
             plt.ylabel("Loss")
             plt.title("Log Loss Over Time")
             plt.yscale("log")
             plt.legend()
+            
+            # 2. Fix the padding so labels don't get cut off at the borders
+            plt.tight_layout()
+            
             save_path = os.path.join(out_dir, "loss_plot.png")
             plt.savefig(save_path)
+            plt.close() # Free memory and clear the active figure
             print(f"Loss plot saved to {save_path}")
             
     if not model_path:

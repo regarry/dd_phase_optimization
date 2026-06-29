@@ -1,4 +1,5 @@
 import os
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -7,8 +8,15 @@ from beam_profiler import run_beam_profiler
 from inference import run_inference
 
 if __name__ == "__main__":
-    training_folder = "./training_results/20260623-145614"
-    epoch = 6
+    # Check for required command-line arguments
+    if len(sys.argv) < 3:
+        print("Usage: python RunProfilerInference.py <training_folder> <epoch>")
+        sys.exit(1)
+
+    # Accept parameters dynamically
+    training_folder = sys.argv[1]
+    epoch = int(sys.argv[2])
+    
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     inference_results = os.path.join(training_folder, timestamp)
     beam_profiles = inference_results

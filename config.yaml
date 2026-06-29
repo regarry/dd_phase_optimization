@@ -37,8 +37,8 @@ early_stopping_min_delta: 1.0e-5 # Minimum change in the monitored quantity to q
 weights: [1.0, 1.0, 2.0]   # cross entropy loss weights (must be floats)
 tv_loss_weight: 0.0        # Weight for the total variation loss of the phase mask
 z_range_cost_function: [0, 0] # the range +- from z=0 that is considered ground truth
-bce_loss_weight: 1.0
-dice_loss_weight: 0.0
+bce_loss_weight: __BCE_WEIGHT__
+dice_loss_weight: __DICE_WEIGHT__
 mse_loss_weight: 0.0
 spatial_multi_well_loss_weight: 0.0
 freeze_unet: True # whether to freeze the unet weights during training (only optimize the phase mask)
