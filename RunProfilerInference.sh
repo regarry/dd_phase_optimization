@@ -3,7 +3,7 @@
 #BSUB -W 1:00
 #BSUB -R "rusage[mem=4GB]"
 ##BSUB -R "select[hname!='gpu16']"
-#BSUB -q short_gpu
+#BSUB -q bme_gpu
 #BSUB -gpu "num=1:mode=shared:mps=no"
 ##BSUB -R "select[a100]"
 #BSUB -J inference
