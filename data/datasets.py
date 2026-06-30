@@ -8,9 +8,6 @@ from .transforms import batch_xyz_to_boolean_grid, batch_xyz_to_3_class_grid, ba
 
 class SyntheticMicroscopeData(Dataset):
     def __init__(self, epoch_length, config):
-        """
-        epoch_length: Arbitrary length (e.g., 1000) to define one 'epoch'.
-        """
         self.length = epoch_length
         self.config = config
 
@@ -19,38 +16,32 @@ class SyntheticMicroscopeData(Dataset):
 
     def __getitem__(self, idx):
         # 1. GENERATE FRESH COORDINATES
-        # xyz shape: (N_emitters, 3)
         bead_xyz_list, between_bead_xyz_list = create_random_emitters(self.config)
         
         # 2. GENERATE TARGET (Ground Truth Volume)
-        # The generator functions expect a Batch dimension (Batch, N, 3).
-        # Since __getitem__ handles a single sample, we add a fake batch dim.
-        xyz_batch = bead_xyz_list[np.newaxis, ...] # Shape becomes (1, N, 3)
+        xyz_batch = bead_xyz_list[np.newaxis, ...] # Shape: (1, N, 3)
         
         if self.config.get('num_classes', 1) == 3:
-             # Handle 3-class case (Background, Bead, Connection)
-             between_batch = between_bead_xyz_list[np.newaxis, ...] if between_bead_xyz_list is not None else None
+             # Clean guard to pass None if no connections were randomly generated
+             between_batch = between_bead_xyz_list[np.newaxis, ...] if between_bead_xyz_list.size > 0 else None
              target = batch_xyz_to_3_class_grid(xyz_batch, between_batch, self.config)
         else:
              # Standard Binary Case
-             if self.config.get('mse_loss', False):
+             if self.config.get('convolve_psf_ground_truth', False):
                 defocused_bead_stack_path = os.path.join(self.config['training_results_dir'], self.config.get('defocused_beads_filename'))
-                # how to load the mat file made with sio.savemat(defocused_bead_stack_path, {'defocus_beads': defocused_beads_np})
                 ideal_psf = sio.loadmat(defocused_bead_stack_path)['defocus_beads'][0]
-                #convert to torch tensor
                 ideal_psf = torch.from_numpy(ideal_psf).float()
                 target = batch_xyz_to_ideal_image(ideal_psf, xyz_batch, self.config)
              else:
                 target = batch_xyz_to_boolean_grid(xyz_batch, self.config)
+                
         # 3. CLEANUP
-        # Remove the fake batch dimension so the DataLoader can stack them properly later.
-        # Target shape goes from (1, Channels, H, W) -> (Channels, H, W)
+        # Target shape goes from (1, 1, H, W) -> (1, H, W)
         target = target.squeeze(0)
         
         # Convert inputs to float tensor
         xyz_tensor = torch.from_numpy(bead_xyz_list).float()
         
-        # 4. RETURN TUPLE (Matches your training loop structure)
         return xyz_tensor, target
     
 class ValidationDataset(Dataset):

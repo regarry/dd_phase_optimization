@@ -47,37 +47,58 @@ def batch_xyz_to_boolean_grid(xyz_np, config):
 
 def batch_xyz_to_3_class_grid(xyz, xyz_between_beads, config):
     """
-    Converts batch xyz bead locations to a 3-class 3D volume for each batch.
-    Class 0: background
-    Class 1: bead
-    Class 2: between-bead (direct z-line between z-coupled pairs)
+    Converts batch xyz bead locations to a 1-channel categorical 2D grid.
+    Pixel Values:
+      0: Background
+      1: Bead
+      2: Between-bead connection
     Args:
         xyz: (batch_size, num_particles, 3) array of bead positions.
         xyz_between_beads: (batch_size, num_between_beads, 3) array of between-bead positions.
-        config: dict with keys 'image_volume' (list/tuple of [H, W, D])
+        config: dict with spatial constraints
     Returns:
-        volumes: (batch_size, D, H, W) numpy array, values 0, 1, 2
+        volume: (batch_size, 1, H, W) torch.LongTensor
     """
     z_range_cost_function = config["z_range_cost_function"]
     image_volume = config["image_volume"]  # [H, W, D]
-    H, W, _ = image_volume
+    
+    # Extract resolution scaling ratio to match the 1-class branch structure
+    ratio = int(config.get("ratio_input_output_image_size", 1))
+    H = image_volume[0] // ratio
+    W = image_volume[1] // ratio
+    
     batch_size, num_particles, _ = xyz.shape
-    D = z_range_cost_function[1] - z_range_cost_function[0] + 1
-    volume = np.zeros((batch_size, D, H, W))
+    
+    # Approach 1: Single-channel target filled with integer class IDs (Default: 0 for Background)
+    volume = np.zeros((batch_size, 1, H, W), dtype=np.int64)
+    
     for k in range(batch_size):
-        # Mark beads
+        # 1. Mark between-bead class FIRST (Class 2)
+        if xyz_between_beads is not None and len(xyz_between_beads) > 0 and xyz_between_beads[k].size > 0:
+            for m in range(len(xyz_between_beads[k])):
+                raw_y = xyz_between_beads[k][m, 1]  # Index 1 is Y
+                raw_x = xyz_between_beads[k][m, 0]  # Index 0 is X
+                z = int(xyz_between_beads[k][m, 2])
+                
+                if z_range_cost_function[0] <= z <= z_range_cost_function[1]:
+                    grid_y = int(raw_y // ratio)
+                    grid_x = int(raw_x // ratio)
+                    
+                    if 0 <= grid_y < H and 0 <= grid_x < W:
+                        volume[k, 0, grid_y, grid_x] = 2
+
+        # 2. Mark beads SECOND (Class 1) - Overwrites connection if they share a pixel coordinate
         for j in range(num_particles):
-            x = int(xyz[k, j, 0])
-            y = int(xyz[k, j, 1])
+            raw_y = xyz[k, j, 1]  # Index 1 is Y
+            raw_x = xyz[k, j, 0]  # Index 0 is X
             z = int(xyz[k, j, 2])
-            if 0 <= x < H and 0 <= y < W and z_range_cost_function[0] <= z <= z_range_cost_function[1]:
-                volume[k, z, x, y] = 1
-        # Mark between-bead class
-        for m in range(len(xyz_between_beads[k])):
-            x = int(xyz_between_beads[k][m, 0])
-            y = int(xyz_between_beads[k][m, 1])
-            z = int(xyz_between_beads[k][m, 2])
-            if 0 <= x < H and 0 <= y < W and z_range_cost_function[0] <= z <= z_range_cost_function[1]:
-                volume[k, z, x, y] = 2
-        volume = torch.from_numpy(volume).type(torch.FloatTensor)
-    return volume
+            
+            if z_range_cost_function[0] <= z <= z_range_cost_function[1]:
+                grid_y = int(raw_y // ratio)
+                grid_x = int(raw_x // ratio)
+                
+                if 0 <= grid_y < H and 0 <= grid_x < W:
+                    volume[k, 0, grid_y, grid_x] = 1
+                        
+    # Return as LongTensor (required by nn.CrossEntropyLoss)
+    return torch.from_numpy(volume).long()

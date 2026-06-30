@@ -150,11 +150,4 @@ class OpticsDesignUnet(nn.Module):
         # 4. Final Classification Layer
         out = self.out(x)
         
-        if self.config.get('mse_loss', False):
-            out = torch.nn.functional.leaky_relu(out, negative_slope=0.01)  # For regression to ideal image, we want values between 0 and 1
-            print("RAW TENSOR MIN:", out.min().item())
-            print("RAW TENSOR MAX:", out.max().item())        
-        else:
-            pass  # For classification, raw logits are returned (CrossEntropyLoss will handle softmax)
-        
         return out

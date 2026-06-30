@@ -25,40 +25,68 @@ from utils.debug import MemorySnapshot, print_all_gpu_stats
 from physics.masks import get_initial_phase_mask
 from physics.simulation import TotalVariationLoss, apply_8bit_physics
 
-def compute_total_loss(outputs, targets, physical_slm_phase, config, loss_funcs, column_sums = None):
+def compute_total_loss(outputs, targets, physical_slm_phase, config, loss_funcs, column_sums=None):
     """
-    Helper function to dynamically compute and sum all active losses.
+    Robust multi-loss computer sharing the 'ce_loss' key for both 1-class and 3-class setups.
+    Outputs: Raw U-Net logits shape (Batch, Num_Classes, H, W)
+    Targets: Ground Truth shape (Batch, 1, H, W)
     """
-    # 1. Base criteria losses (e.g., MSE, L1, etc.)
-    # Ensure targets are float and shapes match for regression losses like MSE
-    print(f"DEBUG: outputs shape: {outputs.shape}")
-    print(f"DEBUG: targets shape: {targets.shape}")
-    print(f"DEBUG: targets total elements: {targets.numel()}")
-    #targets = targets.float()
-
     loss_dict = {}
     total_loss = 0.0
+    num_classes = outputs.shape[1]
 
-    # Dynamically calculate any standard loss passed in the dictionary
     for loss_name, criterion in loss_funcs.items():
-        if loss_name == 'tv_loss':
-            # TV loss applies to the phase mask, not the outputs
+        default_weight = 1.0 if loss_name in ['ce_loss', 'dice_loss'] else 0.0
+        weight = config.get(f'{loss_name}_weight', default_weight)
+        
+        if weight == 0.0:
+            continue
+
+        # --- COMBINED CLASSIFICATION BRANCH ---
+        if loss_name == 'ce_loss':
+            if num_classes == 3:
+                # Multi-class CrossEntropy expects (Batch, H, W) Long targets
+                targets_ce = targets.squeeze(1).long()
+                val = criterion(outputs, targets_ce)
+            else:
+                # 1-Class BCEWithLogitsLoss expects matching shape and Float targets
+                val = criterion(outputs, targets.float())
+
+        # --- OVERLAP LOSSES (Dice) ---
+        elif loss_name == 'dice_loss':
+            if num_classes == 3:
+                probs = torch.softmax(outputs, dim=1)
+                val = criterion(probs, targets)
+            else:
+                probs = torch.sigmoid(outputs)
+                val = criterion(probs, targets.float())
+
+        # --- CONTINUOUS IMAGE REGRESSION (MSE / MAE) ---
+        elif loss_name in ['mse_loss', 'mae_loss']:
+            if num_classes == 3:
+                # Extract bead probabilities (Channel 1) against isolated bead target mask
+                probs = torch.softmax(outputs, dim=1)
+                bead_prob_map = probs[:, 1:2, :, :]
+                bead_target_mask = (targets == 1).float()
+                val = criterion(bead_prob_map, bead_target_mask)
+            else:
+                activated_outputs = torch.sigmoid(outputs)
+                val = criterion(activated_outputs, targets.float())
+
+        # --- PHYSICAL / AUXILIARY LOSSES ---
+        elif loss_name == 'tv_loss':
             val = criterion(physical_slm_phase)
+            
         elif loss_name == 'spatial_multi_well_loss':
             val = criterion(column_sums)
-        elif loss_name == 'ce_loss':
-            targets_ce = targets.squeeze(1).long()  # Ensure targets are (Batch, H, W) and long for CE
-            val = criterion(outputs, targets_ce)
+            
         else:
-            # Standard losses apply to outputs and targets
             val = criterion(outputs, targets)
         
-        weight = config.get(f'{loss_name}_weight', 1.0)
         loss_dict[loss_name] = val * weight
         total_loss += loss_dict[loss_name]
 
     return total_loss, loss_dict
-
 
 def train_one_epoch(model, dataloader, optimizer, loss_funcs, mask_param, config, epoch):
     """
@@ -339,37 +367,39 @@ def main():
     
     # Loss setup
     criterion_dict = {}
+    num_classes = config.get('num_classes', 1)
 
-    # 1. Determine Loss Functions
-    if config['num_classes'] == 3:
-        weights = torch.tensor(config.get('weights', [1,1,1])).float().to(main_device)
-        criterion_ce = nn.CrossEntropyLoss(weight=weights)
-        criterion_dice = MultiClassDiceLoss()
-        criterion_dict = {'ce_loss': criterion_ce, 'dice_loss': criterion_dice}
-        print("Using MultiClassDiceLoss for 3-class segmentation.")
+    # 1. Class-Dependent Core Losses
+    if num_classes == 3:
+        ce_class_weights = torch.tensor(config.get('ce_class_weights', [1.0, 1.0, 1.0])).float().to(main_device)
+        criterion_dict['ce_loss'] = nn.CrossEntropyLoss(weight=ce_class_weights)
+        criterion_dict['dice_loss'] = MultiClassDiceLoss()
+        print("Initialized 3-class core losses: CrossEntropy & MultiClassDiceLoss.")
 
-    elif config['num_classes'] == 1:
-        if config.get('mse_loss', False):
-            criterion_mse = nn.HuberLoss(delta=0.1)
-            criterion_dict = {'mse_loss': criterion_mse}
-            print("Using Huber Loss for regression.")
-        elif config.get('SpatialMulitWellLoss', False):  
-            criterion_smw = DynamicSpatialWellLoss(x_bound=config.get('spatial_well_x'), y_target=config.get('spatial_well_y'))
-            criterion_dict = {'spatial_multi_well_loss': criterion_smw}
-            print("Using Dynamic Spatial Multi-Well Loss.")
-        else:
-            criterion_ce = nn.BCEWithLogitsLoss()
-            criterion_dice = BinaryDiceLoss() 
-            criterion_dict = {'bce_loss': criterion_ce, 'dice_loss': criterion_dice}
-
+    elif num_classes == 1:
+        criterion_dict['ce_loss'] = nn.BCEWithLogitsLoss()
+        criterion_dict['dice_loss'] = BinaryDiceLoss()
+        print("Initialized 1-class core losses: BCEWithLogitsLoss & BinaryDiceLoss.")
+        
     else:
-        raise ValueError("Unsupported number of classes. Only 1 or 3 are supported.")
+        raise ValueError(f"Unsupported number of classes: {num_classes}. Only 1 or 3 are supported.")
 
-    # 2. Setup Optimizer (Always happens, regardless of branch)
-    # Check if we need special param groups for the Multi-Well loss
+    # 2. General Regression & Auxiliary Losses (Always populated, controlled via config weights)
+    criterion_dict['mse_loss'] = nn.MSELoss()
+    criterion_dict['mae_loss'] = nn.L1Loss()  # Added Mean Absolute Error (L1) Loss
+    criterion_dict['tv_loss'] = TotalVariationLoss()
+    criterion_dict['spatial_multi_well_loss'] = DynamicSpatialWellLoss(
+        x_bound=config.get('spatial_well_x'), 
+        y_target=config.get('spatial_well_y')
+    )
+
+
+    # 3. Setup Optimizer
+    # Check if spatial multi-well loss is actively being used based on its weight configuration
+    is_smw_active = config.get('spatial_multi_well_loss_weight', 0.0) > 0.0
     
     if config.get('freeze_slm', False):
-        if 'spatial_multi_well_loss' in criterion_dict:
+        if is_smw_active:
             optimizer = Adam([
                 {'params': list(model.parameters()), 'lr': config['initial_learning_rate']},
                 {'params': criterion_dict['spatial_multi_well_loss'].parameters(), 'lr': config['initial_learning_rate'] * 0.1}
@@ -377,14 +407,13 @@ def main():
         else:
             optimizer = Adam(list(model.parameters()), lr=config['initial_learning_rate'])
     else:
-        if 'spatial_multi_well_loss' in criterion_dict:
+        if is_smw_active:
             optimizer = Adam([
                 {'params': list(model.parameters()) + [mask_param], 'lr': config['initial_learning_rate']},
                 {'params': criterion_dict['spatial_multi_well_loss'].parameters(), 'lr': config['initial_learning_rate'] * 0.1}
             ]) 
         else:
             optimizer = Adam(list(model.parameters()) + [mask_param], lr=config['initial_learning_rate'])
-    
 
     
     # 2. Setup Scheduler
