@@ -35,7 +35,7 @@ early_stopping_min_delta: 1.0e-5 # Minimum change in the monitored quantity to q
 
 # Loss Function & Weights
 z_range_cost_function: [0, 0] # the range +- from z=0 that is considered ground truth
-ce_class_weights: [1.0, 1.0, 2.0]   # cross entropy loss weights (must be floats)
+ce_class_weights: [0.1, 1.0, 2.0]   # cross entropy loss weights (must be floats)
 ce_loss_weight: __CE_WEIGHT__ # (binary if num classes == 1) cross entropy loss weight
 dice_loss_weight: __DICE_WEIGHT__ # F1 score aka DICE loss weight
 mae_loss_weight: __MAE_WEIGHT__ # l1 loss or mean absolute error loss weight

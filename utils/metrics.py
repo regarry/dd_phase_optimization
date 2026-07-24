@@ -32,7 +32,7 @@ def compute_and_log_metrics(gt_img, cnn_img, out_dir, name, num_classes=2):
         precision_top, recall_top, f1_top = compute_metrics(gt_top, cnn_top)
     elif num_classes == 3:
         _, precision_top, recall_top, f1_top = compute_metrics_multiclass(gt_top, cnn_top, num_classes)
-    print(f"Top 1/3: Precision: {precision_top}, Recall: {recall_top}, F1: {f1_top}")
+    #print(f"Top 1/3: Precision: {precision_top}, Recall: {recall_top}, F1: {f1_top}")
 
     # Middle 1/3
     gt_middle = gt_img[h//3:2*h//3, :]
@@ -41,7 +41,7 @@ def compute_and_log_metrics(gt_img, cnn_img, out_dir, name, num_classes=2):
         precision_middle, recall_middle, f1_middle = compute_metrics(gt_middle, cnn_middle)
     elif num_classes == 3:
         _, precision_middle, recall_middle, f1_middle = compute_metrics_multiclass(gt_middle, cnn_middle, num_classes)
-    print(f"Middle 1/3: Precision: {precision_middle}, Recall: {recall_middle}, F1: {f1_middle}")
+    #print(f"Middle 1/3: Precision: {precision_middle}, Recall: {recall_middle}, F1: {f1_middle}")
 
     # Bottom 1/3
     gt_bottom = gt_img[2*h//3:, :]
@@ -50,7 +50,7 @@ def compute_and_log_metrics(gt_img, cnn_img, out_dir, name, num_classes=2):
         precision_bottom, recall_bottom, f1_bottom = compute_metrics(gt_bottom, cnn_bottom)
     elif num_classes == 3:
         _, precision_bottom, recall_bottom, f1_bottom = compute_metrics_multiclass(gt_bottom, cnn_bottom, num_classes)
-    print(f"Bottom 1/3: Precision: {precision_bottom}, Recall: {recall_bottom}, F1: {f1_bottom}")
+    #print(f"Bottom 1/3: Precision: {precision_bottom}, Recall: {recall_bottom}, F1: {f1_bottom}")
 
     metrics_out_path = os.path.join(out_dir, "metrics.txt")
     with open(metrics_out_path, "a") as f:

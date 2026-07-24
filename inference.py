@@ -33,63 +33,106 @@ def inference_one_epoch(model, dataloader, mask_param, config, out_dir):
     
     with torch.no_grad():
         for batch_idx, (bead_xyz_list, targets) in enumerate(dataloader):
+            # Move inputs to device
             bead_xyz_list = bead_xyz_list.to(main_device)
             targets = targets.to(main_device)
             
+            # Target preprocessing for multi-class
             if config['num_classes'] > 1:
                 if targets.dim() == 4 and targets.shape[1] == 1:
                     targets = targets.squeeze(1).long()
 
+            # Model Forward Pass
             if config.get('SpatialMulitWellLoss', False):
                 logits, column_sums = model(mask_param, bead_xyz_list)
             else:
                 logits = model(mask_param, bead_xyz_list)
                 
+            # --- PROCESS PREDICTIONS & PROBABILITIES ---
             if config['num_classes'] == 3:
-                probs = torch.softmax(logits, dim=1)
-                cnn_img = torch.argmax(probs, dim=1)
-                gray_data = probs[0, :3, :, :].detach().cpu().numpy()
+                probs = torch.softmax(logits, dim=1)  # Shape: (B, 3, H, W)
+                cnn_img = torch.argmax(probs, dim=1)  # Shape: (B, H, W)
+                
+                # Take first batch item, transpose from (3, H, W) -> (H, W, 3) for RGB
+                prob_map = probs[0].detach().cpu().numpy()
+                rgb_prob_image = np.transpose(prob_map, (1, 2, 0))
+                
+                # Scale float probabilities [0, 1] to [0, 255] uint8 for standard image viewing
+                gray_data = (rgb_prob_image * 255).astype(np.uint8)
+                
             elif config['num_classes'] == 1:
                 probs = torch.sigmoid(logits)
+                cnn_img = (probs > 0.5).long() # threshold for metrics if needed
                 gray_data = probs.squeeze().detach().cpu().numpy()
             else:
                 raise ValueError(f"Unsupported num_classes: {config['num_classes']}")
             
+            # Save the Prediction/Probability Image
             out_path = os.path.join(out_dir, f"inference_{batch_idx}.tif")
             io.imsave(out_path, gray_data)
             print(f"Saved inference for key {batch_idx} to {out_path}")
             
-            gt_img = targets
-            print(f"Ground truth shape: {gt_img.shape}, dtype: {gt_img.dtype}")
-            if torch.is_tensor(gt_img):
-                gt_img = gt_img.squeeze().detach().cpu().numpy()
-            if gt_img.dtype == np.bool_:
-                gt_img = (gt_img.astype(np.uint8))
+            # --- PROCESS GROUND TRUTH & METRICS ---
+            print(f"Ground truth shape: {targets.shape}, dtype: {targets.dtype}")
+            
+            # Safe conversion of the entire batch to numpy for metric tracking
+            batch_targets_np = targets.detach().cpu().numpy()
+            
             if config['num_classes'] == 3:
                 palette = np.array([
-                    [255,   0,   0], 
-                    [  0, 255,   0], 
-                    [  0,   0, 255]  
+                    [255,   0,   0], # Class 0 -> Red
+                    [  0, 255,   0], # Class 1 -> Green
+                    [  0,   0, 255]  # Class 2 -> Blue
                 ], dtype=np.uint8)
                 
-                rgb_gt_image = palette[gt_img]
-                compute_and_log_metrics(targets.cpu().numpy(), cnn_img.cpu().numpy(), out_dir, f"batch_{batch_idx}", num_classes=3)
+                # Explicitly isolate the first sample's 2D slice for visual palette mapping
+                gt_img_2d = targets[0].squeeze().detach().cpu().numpy().astype(np.int64)
+                rgb_gt_image = palette[gt_img_2d]
+                
+                # Log metrics using clean numpy arrays across the whole batch
+                compute_and_log_metrics(
+                    batch_targets_np, 
+                    cnn_img.cpu().numpy(), 
+                    out_dir, 
+                    f"batch_{batch_idx}", 
+                    num_classes=3
+                )
             elif config['num_classes'] == 1:
+                gt_img = targets.squeeze().detach().cpu().numpy()
+                if gt_img.dtype == np.bool_:
+                    gt_img = gt_img.astype(np.uint8)
                 rgb_gt_image = gt_img
-                compute_and_log_metrics(gt_img, gray_data, out_dir, f"batch_{batch_idx}", num_classes=1)
+                
+                compute_and_log_metrics(
+                    batch_targets_np, 
+                    gray_data, 
+                    out_dir, 
+                    f"batch_{batch_idx}", 
+                    num_classes=1
+                )
             else:
                 raise ValueError(f"Unsupported num_classes: {config['num_classes']}")
                 
+            # Save Ground Truth Image
             gt_path = os.path.join(out_dir, f"ground_truth_{batch_idx}.tif")
             io.imsave(gt_path, rgb_gt_image)
             print(f"Saved ground truth for key {batch_idx} to {gt_path}")
             
+            # --- OPTICAL/CAMERA SIMULATION LOGIC ---
             if config.get('SpatialMulitWellLoss', False):
                 camera, column_sums = model.physics(mask_param, bead_xyz_list)
             else:
                 camera = model.physics(mask_param, bead_xyz_list)
+                
             camera_path = os.path.join(out_dir, f"camera_image_{batch_idx}.tif")
             camera_img = (camera.squeeze().detach().cpu().numpy() * config.get('camera_max_adu', 65535))
+            
+            # Ensure proper casting if saving as high-depth integer TIFF
+            if config.get('camera_max_adu', 65535) > 255:
+                camera_img = camera_img.astype(np.uint16)
+            else:
+                camera_img = camera_img.astype(np.uint8)
+                
             io.imsave(camera_path, camera_img)
             print(f"Saved camera image for {batch_idx} to {camera_path}")
 

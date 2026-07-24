@@ -2,7 +2,7 @@
 #BSUB -n 4
 #BSUB -W 1:00
 #BSUB -R "rusage[mem=4GB]"
-##BSUB -R "select[hname!='gpu16']"
+#BSUB -R "select[hname!='gpu18']"
 #BSUB -q short_gpu
 #BSUB -gpu "num=1:mode=shared:mps=no"
 ##BSUB -R "select[a100]"

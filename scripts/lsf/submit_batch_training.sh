@@ -13,14 +13,14 @@ mkdir -p "$TEMP_DIR"
 mkdir -p ./logs
 
 # Define the parameter ranges
-PHASE_MASKS=("random") #("empty" "axicon" "lens" "random")
+PHASE_MASKS=("random" "empty" "axicon" "lens") #("empty" "axicon" "lens" "random")
 NUM_CLASSES_ARR=(1 3) #(1 3)
 
 # Define the loss weight ratios to test (e.g., 1:0, 1:1, 0.5:1, 0:1)
-CE_WEIGHTS=(1.0 0.0 0.0 0.0)  #(1.0 0.1 1.0)
-DICE_WEIGHTS=(0.0 1.0 0.0 0.0)  #(1.0 1.0 0.1)
-MAE_WEIGHTS=(0.0 0.0 1.0 0.0)
-MSE_WEIGHTS=(0.0 0.0 0.0 1.0)
+CE_WEIGHTS=(1.0 0.0 1.0)  #(1.0 0.1 1.0)
+DICE_WEIGHTS=(0.0 1.0 1.0)  #(1.0 1.0 0.1)
+MAE_WEIGHTS=(0.0 0.0 0.0)
+MSE_WEIGHTS=(0.0 0.0 0.0)
 
 
 # 2. Loop through all permutations

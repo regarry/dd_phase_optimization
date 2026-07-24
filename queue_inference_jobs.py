@@ -2,10 +2,11 @@ import os
 import re
 import subprocess
 import sys
+import argparse
 from pathlib import Path
 
 
-def queue_jobs(base_dir, start_dir):
+def queue_jobs(base_dir, start_dir, single_job=False):
     base_path = Path(base_dir)
     if not base_path.exists():
         print(f"Error: Base directory '{base_dir}' does not exist.")
@@ -17,23 +18,35 @@ def queue_jobs(base_dir, start_dir):
     # Matches standard YYYYMMDD-HHMMSS format
     dir_pattern = re.compile(r"^\d{8}-\d{6}$")
 
-    # Filter directories that are chronologically >= start_dir
+    # Filter directories based on the 'single' flag selection strategy
     subdirs = []
     for d in base_path.iterdir():
         if d.is_dir() and dir_pattern.match(d.name):
-            if d.name >= start_dir:
-                subdirs.append(d)
+            if single_job:
+                # Strictly look for an exact match
+                if d.name == start_dir:
+                    subdirs.append(d)
+            else:
+                # Filter directories that are chronologically >= start_dir
+                if d.name >= start_dir:
+                    subdirs.append(d)
 
     # Sort directories chronologically
     subdirs.sort(key=lambda x: x.name)
 
     if not subdirs:
-        print(f"No subdirectories found matching or newer than: {start_dir}")
+        if single_job:
+            print(f"No subdirectory found exactly matching: {start_dir}")
+        else:
+            print(f"No subdirectories found matching or newer than: {start_dir}")
         return
 
-    print(
-        f"Found {len(subdirs)} target directory(ies) starting from {start_dir}\n"
-    )
+    if single_job:
+        print(f"Queueing single target directory: {start_dir}\n")
+    else:
+        print(
+            f"Found {len(subdirs)} target directory(ies) starting from {start_dir}\n"
+        )
 
     for subdir in subdirs:
         models_dir = subdir / "models"
@@ -88,15 +101,31 @@ def queue_jobs(base_dir, start_dir):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python queue_jobs.py <oldest_subdir_name> [base_dir]")
-        print("Example: python queue_jobs.py 20260626-054358")
-        sys.exit(1)
-
-    start_directory = sys.argv[1]
-    # Defaults to ./training_results if not specified
-    base_directory = (
-        sys.argv[2] if len(sys.argv) > 2 else "./training_results"
+    parser = argparse.ArgumentParser(
+        description="Queue up inference jobs using bsub based on chronological or single directory targets."
+    )
+    
+    # Arguments
+    parser.add_argument(
+        "target_dir", 
+        type=str, 
+        help="The target subdirectory name (e.g., 20260626-054358)."
+    )
+    parser.add_argument(
+        "base_dir", 
+        type=str, 
+        nargs="?", 
+        default="./training_results", 
+        help="Base directory containing the results (default: ./training_results)."
+    )
+    
+    # Flags
+    parser.add_argument(
+        "-s", "--single", 
+        action="store_true", 
+        help="Queue ONLY the exact folder matching target_dir, instead of processing sequentially onward."
     )
 
-    queue_jobs(base_directory, start_directory)
+    args = parser.parse_args()
+
+    queue_jobs(args.base_dir, args.target_dir, single_job=args.single)
