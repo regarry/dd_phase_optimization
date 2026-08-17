@@ -25,40 +25,45 @@ def compute_and_log_metrics(gt_img, cnn_img, out_dir, name, num_classes=2):
 
     print(f"Full image: Precision: {precision_full}, Recall: {recall_full}, F1: {f1_full}")
 
-    # Top 1/3
-    gt_top = gt_img[:h//3, :]
-    cnn_top = cnn_img[:h//3, :]
-    if num_classes == 1:
-        precision_top, recall_top, f1_top = compute_metrics(gt_top, cnn_top)
-    elif num_classes == 3:
-        _, precision_top, recall_top, f1_top = compute_metrics_multiclass(gt_top, cnn_top, num_classes)
-    #print(f"Top 1/3: Precision: {precision_top}, Recall: {recall_top}, F1: {f1_top}")
+    # # Top 1/3
+    # gt_top = gt_img[:h//3, :]
+    # cnn_top = cnn_img[:h//3, :]
+    # if num_classes == 1:
+    #     precision_top, recall_top, f1_top = compute_metrics(gt_top, cnn_top)
+    # elif num_classes == 3:
+    #     _, precision_top, recall_top, f1_top = compute_metrics_multiclass(gt_top, cnn_top, num_classes)
+    # #print(f"Top 1/3: Precision: {precision_top}, Recall: {recall_top}, F1: {f1_top}")
 
-    # Middle 1/3
-    gt_middle = gt_img[h//3:2*h//3, :]
-    cnn_middle = cnn_img[h//3:2*h//3, :]
-    if num_classes == 1:
-        precision_middle, recall_middle, f1_middle = compute_metrics(gt_middle, cnn_middle)
-    elif num_classes == 3:
-        _, precision_middle, recall_middle, f1_middle = compute_metrics_multiclass(gt_middle, cnn_middle, num_classes)
-    #print(f"Middle 1/3: Precision: {precision_middle}, Recall: {recall_middle}, F1: {f1_middle}")
+    # # Middle 1/3
+    # gt_middle = gt_img[h//3:2*h//3, :]
+    # cnn_middle = cnn_img[h//3:2*h//3, :]
+    # if num_classes == 1:
+    #     precision_middle, recall_middle, f1_middle = compute_metrics(gt_middle, cnn_middle)
+    # elif num_classes == 3:
+    #     _, precision_middle, recall_middle, f1_middle = compute_metrics_multiclass(gt_middle, cnn_middle, num_classes)
+    # #print(f"Middle 1/3: Precision: {precision_middle}, Recall: {recall_middle}, F1: {f1_middle}")
 
-    # Bottom 1/3
-    gt_bottom = gt_img[2*h//3:, :]
-    cnn_bottom = cnn_img[2*h//3:, :]
-    if num_classes == 1:
-        precision_bottom, recall_bottom, f1_bottom = compute_metrics(gt_bottom, cnn_bottom)
-    elif num_classes == 3:
-        _, precision_bottom, recall_bottom, f1_bottom = compute_metrics_multiclass(gt_bottom, cnn_bottom, num_classes)
-    #print(f"Bottom 1/3: Precision: {precision_bottom}, Recall: {recall_bottom}, F1: {f1_bottom}")
+    # # Bottom 1/3
+    # gt_bottom = gt_img[2*h//3:, :]
+    # cnn_bottom = cnn_img[2*h//3:, :]
+    # if num_classes == 1:
+    #     precision_bottom, recall_bottom, f1_bottom = compute_metrics(gt_bottom, cnn_bottom)
+    # elif num_classes == 3:
+    #     _, precision_bottom, recall_bottom, f1_bottom = compute_metrics_multiclass(gt_bottom, cnn_bottom, num_classes)
+    # #print(f"Bottom 1/3: Precision: {precision_bottom}, Recall: {recall_bottom}, F1: {f1_bottom}")
 
     metrics_out_path = os.path.join(out_dir, "metrics.txt")
+    file_exists = os.path.isfile(metrics_out_path)
     with open(metrics_out_path, "a") as f:
-        f.write(f"Metrics for {name}:\n")
-        f.write(f"  Full image: Precision: {precision_full}, Recall: {recall_full}, F1: {f1_full}\n")
-        f.write(f"  Top 1/3: Precision: {precision_top}, Recall: {recall_top}, F1: {f1_top}\n")
-        f.write(f"  Middle 1/3: Precision: {precision_middle}, Recall: {recall_middle}, F1: {f1_middle}\n")
-        f.write(f"  Bottom 1/3: Precision: {precision_bottom}, Recall: {recall_bottom}, F1: {f1_bottom}\n")
+        # 1. Write header only if creating a new file
+        if not file_exists:
+            f.write("image_name,precision,recall,f1\n")
+        
+        # 2. Write formatted rows (using formatting like .4f to keep decimals clean)
+        f.write(f"{name},{precision_full:.4f},{recall_full:.4f},{f1_full:.4f}\n")
+        # f.write(f"  Top 1/3: Precision: {precision_top}, Recall: {recall_top}, F1: {f1_top}\n")
+        # f.write(f"  Middle 1/3: Precision: {precision_middle}, Recall: {recall_middle}, F1: {f1_middle}\n")
+        # f.write(f"  Bottom 1/3: Precision: {precision_bottom}, Recall: {recall_bottom}, F1: {f1_bottom}\n")
         
 
 def compute_metrics(y_true, y_pred, threshold=0.5):

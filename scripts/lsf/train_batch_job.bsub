@@ -1,10 +1,10 @@
 #!/bin/bash
 #BSUB -n 4
-#BSUB -W 2:00 # bme_gpu max 335:00 hr or 2 weeks
+#BSUB -W 12:00 # bme_gpu max 335:00 hr or 2 weeks
 #BSUB -R "rusage[mem=4GB]"
-#BSUB -q short_gpu
-#BSUB -gpu "num=2:mode=exclusive_process:mps=yes"
-#BSUB -R "select[h100]"
+#BSUB -q bme_gpu
+#BSUB -gpu "num=1:mode=exclusive_process:mps=yes"
+##BSUB -R "select[h100]"
 #BSUB -J train_dd
 #BSUB -o ./logs/.%J
 #BSUB -e ./logs/.%J

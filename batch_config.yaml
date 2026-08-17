@@ -1,7 +1,7 @@
 # ==========================================
 # 5. BEAD & SAMPLE GENERATION
 # ==========================================
-num_particles_range: [2000, 2001] # [min, max] emitters per image. Strong GPU: [450, 550]
+num_particles_range: [600, 601] # [min, max] emitters per image. Strong GPU: [450, 550]
 bead_radius: 0.5          # pixels 1.0 default
 z_coupled_ratio: 0.5
 z_coupled_spacing_range: [1, 5] # need to change the code so that the z coupled beads are only generated around the in focus plane
@@ -36,20 +36,20 @@ early_stopping_min_delta: 1.0e-5 # Minimum change in the monitored quantity to q
 # Loss Function & Weights
 z_range_cost_function: [0, 0] # the range +- from z=0 that is considered ground truth
 ce_class_weights: [0.1, 1.0, 2.0]   # cross entropy loss weights (must be floats)
-ce_loss_weight: 0 # (binary if num classes == 1) cross entropy loss weight
-dice_loss_weight: 0 # F1 score aka DICE loss weight
-mae_loss_weight: 0 # l1 loss or mean absolute error loss weight
-mse_loss_weight: 0 # l2 loss or mean squared error loss weight
-spatial_multi_well_loss_weight: 0.0
+ce_loss_weight: __CE_WEIGHT__ # (binary if num classes == 1) cross entropy loss weight
+dice_loss_weight: __DICE_WEIGHT__ # F1 score aka DICE loss weight
+mae_loss_weight: __MAE_WEIGHT__ # l1 loss or mean absolute error loss weight
+mse_loss_weight: __MSE_WEIGHT__ # l2 loss or mean squared error loss weight
+spatial_multi_well_loss_weight: __SLL_WEIGHT__
 tv_loss_weight: 0.0        # Weight for the total variation loss of the phase mask
 convolve_psf_ground_truth: True # whether to convolve the PSF with the ground truth for training instead of boolean labels (doesnt work with 3 classes)
 
-freeze_unet: False # whether to freeze the unet weights during training (only optimize the phase mask)
+freeze_unet: True # whether to freeze the unet weights during training (only optimize the phase mask)
 freeze_slm: False
 #disable_camera_simulation: True # not working yet
 
 spatial_well_x: 5 # in pixels distance desired fwhm of center lobe
-spatial_well_y: 5 # in pixels distance from center where light is penalized
+spatial_well_y: __SIDE_LOBE_RADIUS__ # in pixels distance from center where light is penalized
 smw_z_min_mm: -0.064             # Min z-position for beam profile [mm]
 smw_z_max_mm: 0.064              # Max z-position for beam profile [mm]
 smw_y_min_mm: -0.064             # Min y-position for beam profile [mm]
@@ -94,7 +94,7 @@ lowpass_pinhole_radius_mm: 2.7 # radius of lowpass pinhole in mm for ASM simulat
 # ==========================================
 slm_px: 1.00e-6 # if 9.2um slm and we have 8x mag then 1.15 but round down to 1um            # Physical pixel size of the SLM [m]
 phase_mask_pixel_size: 1024 # Number of pixels on the SLM side (resolution)
-initial_phase_mask: "axicon"
+initial_phase_mask: __PHASE_MASK__
 bessel_half_cone_angle_degrees: 4.0 # 0.5 max on galvo mirror then x8 so 4.0
 airy_alpha: 1.0e-1 #Controls the cubic strength and dictates the "bending" trajectory of the Airy beam.
 cylinder_axis: "x" # axis of the cylindrical lens if using cylindrical phase mask (x or y)
@@ -105,7 +105,7 @@ phase_mask_upsample_factor: 1 # Scale factor for phase mask upsampling (simulati
 # ==========================================
 
 # ***************** want to change this to input meters not px?
-image_volume: [64, 1024, 128] #  0 means auto for first index # the first two dimensions should be powers of 2 for the u-net [y, x, z] volume of imaging in px (camera coordinates)
+image_volume: [64, 1024, 256] #  0 means auto for first index # the first two dimensions should be powers of 2 for the u-net [y, x, z] volume of imaging in px (camera coordinates)
 ratio_input_output_image_size: 1 # default with Unet 1, with ResNet 4
 
 # ==========================================
@@ -144,7 +144,7 @@ min_clip_value: 0.0              # minimum value to clip the normalized images t
 use_unet: True
 conv3d: False
 dropout: 0.0
-num_classes: 1            # 0=background, 1=bead, 2=between beads
+num_classes: __NUM_CLASSES__            # 0=background, 1=bead, 2=between beads
 z_depth_list: [0] #[-6 0 6]          # z slices input into the cnn
 
 # ==========================================
