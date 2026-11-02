@@ -1,3 +1,4 @@
+from physics.phase_io import load_phase_config
 # -*- coding: utf-8 -*-
 import numpy as np
 import skimage.io
@@ -61,7 +62,7 @@ def main():
     # Load mask from tiff file (similar to physics_inference.py)
     mask_filename = f"mask_phase_epoch_{args.epoch-1}_0.tiff"
     mask_path = os.path.join(args.input_dir, mask_filename)
-    mask_np = skimage.io.imread(mask_path)
+    mask_np = load_phase_config(mask_path, config)
     mask_tensor = torch.from_numpy(mask_np).type(torch.FloatTensor).to(config['device'])
     mask_param = torch.nn.Parameter(mask_tensor, requires_grad=False)
     

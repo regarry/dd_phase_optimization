@@ -23,7 +23,11 @@ from models.wrappers import ParallelEndToEndModel
 from data.preprocessing import generate_bead_templates
 from utils.debug import MemorySnapshot, print_all_gpu_stats
 from physics.masks import get_initial_phase_mask
-from physics.simulation import TotalVariationLoss, apply_8bit_physics
+from physics.simulation import TotalVariationLoss
+from physics.phase_io import quantize_phase, save_codes, levels
+from training.checkpoint import read_checkpoint, resume_config, restore_checkpoint, save_checkpoint
+import yaml
+import copy
 
 def compute_total_loss(outputs, targets, physical_slm_phase, config, loss_funcs, column_sums=None):
     """
@@ -54,12 +58,7 @@ def compute_total_loss(outputs, targets, physical_slm_phase, config, loss_funcs,
 
         # --- OVERLAP LOSSES (Dice) ---
         elif loss_name == 'dice_loss':
-            if num_classes == 3:
-                probs = torch.softmax(outputs, dim=1)
-                val = criterion(probs, targets)
-            else:
-                probs = torch.sigmoid(outputs)
-                val = criterion(probs, targets.float())
+            val = criterion(outputs, targets)
 
         # --- CONTINUOUS IMAGE REGRESSION (MSE / MAE) ---
         elif loss_name in ['mse_loss', 'mae_loss']:
@@ -86,7 +85,20 @@ def compute_total_loss(outputs, targets, physical_slm_phase, config, loss_funcs,
         loss_dict[loss_name] = val * weight
         total_loss += loss_dict[loss_name]
 
+    if not loss_dict:
+        raise ValueError('Enable at least one loss weight in YAML')
     return total_loss, loss_dict
+
+def require_accumulation_steps(config):
+    """One mandatory YAML key; reject old names instead of silently falling back."""
+    if 'gradient_accumulation_steps' in config:
+        raise ValueError('Use accumulation_steps, not gradient_accumulation_steps, in YAML')
+    if 'accumulation_steps' not in config:
+        raise ValueError('Missing required YAML key: accumulation_steps')
+    steps = config['accumulation_steps']
+    if isinstance(steps, bool) or not isinstance(steps, int) or steps < 1:
+        raise ValueError('accumulation_steps must be a positive integer')
+    return steps
 
 def train_one_epoch(model, dataloader, optimizer, loss_funcs, mask_param, config, epoch):
     """
@@ -96,14 +108,17 @@ def train_one_epoch(model, dataloader, optimizer, loss_funcs, mask_param, config
     model.train()
     total_loss = 0.0
     main_device = torch.device(config.get('cnn_device', 'cuda:0'))
-    grad_accum = config.get('gradient_accumulation_steps', 32)
+    grad_accum = require_accumulation_steps(config)
+    window_samples = 0
+    total_samples = 0
+    optimizer.zero_grad(set_to_none=True)
     
     for batch_idx, (bead_xyz_list, targets) in enumerate(dataloader):
         bead_xyz_list = bead_xyz_list.to(main_device)
         targets = targets.to(main_device)
         
         # 1. APPLY HARDWARE PHYSICS
-        physical_slm_phase = apply_8bit_physics(mask_param)
+        physical_slm_phase = quantize_phase(mask_param, config.get('slm_bit_depth', 8))
         
         # 2. FORWARD PASS
         if config.get('SpatialMulitWellLoss', False):
@@ -114,15 +129,29 @@ def train_one_epoch(model, dataloader, optimizer, loss_funcs, mask_param, config
         # 3. LOSS & OPTIMIZATION
         loss, _ = compute_total_loss(outputs, targets, physical_slm_phase, config, loss_funcs, column_sums if config.get('SpatialMulitWellLoss', False) else None)
         
-        loss.backward()
-        
+        # Losses are microbatch means. Weight by sample count so a smaller
+        # final microbatch does not receive the same weight as a full one.
+        batch_samples = bead_xyz_list.shape[0]
+        (loss * batch_samples).backward()
+        window_samples += batch_samples
+
         if (batch_idx + 1) % grad_accum == 0 or batch_idx == (len(dataloader) - 1):
+            # Normalize before Adam/SGD sees the gradients, including the last
+            # partial accumulation window. Apply to model AND phase parameters.
+            for group in optimizer.param_groups:
+                for parameter in group['params']:
+                    if parameter.grad is not None:
+                        parameter.grad.div_(window_samples)
             optimizer.step()
-            optimizer.zero_grad()
-            
-        total_loss += loss.item()
-            
-    return total_loss / len(dataloader)
+            optimizer.zero_grad(set_to_none=True)
+            window_samples = 0
+
+        total_loss += loss.item() * batch_samples
+        total_samples += batch_samples
+
+    if total_samples == 0:
+        raise ValueError('Training dataloader is empty')
+    return total_loss / total_samples
 
 
 def validate_one_epoch(model, dataloader, loss_funcs, mask_param, config, epoch):
@@ -134,7 +163,7 @@ def validate_one_epoch(model, dataloader, loss_funcs, mask_param, config, epoch)
     main_device = torch.device(config.get('cnn_device', 'cuda:0'))
     
     with torch.no_grad():
-        physical_slm_phase = apply_8bit_physics(mask_param)
+        physical_slm_phase = quantize_phase(mask_param, config.get('slm_bit_depth', 8))
         
         for batch_idx, (bead_xyz_list, targets) in enumerate(dataloader):
             bead_xyz_list = bead_xyz_list.to(main_device)
@@ -232,16 +261,10 @@ class MultiClassDiceLoss(nn.Module):
         # 2. One-Hot Encode the targets to match probs shape
         #    Output: [Batch, Classes, D, H, W]
         # .long() converts the tensor to int64, which F.one_hot requires
-        targets_one_hot = F.one_hot(targets.long(), num_classes=logits.shape[1])
-        targets_one_hot = targets_one_hot.squeeze(1)
-        print(f"Shape after one_hot: {targets_one_hot.shape}")
-        print(f"Number of dims: {targets_one_hot.dim()}")
-        
-        targets_one_hot = targets_one_hot.permute(0, 3, 1, 2).float()
-        
-        # 3. Calculate Intersection and Union (per class, per batch)
-        #    Sum over spatial dimensions (D, H, W) -> (Batch, Classes)
-        dims = (2, 3) 
+        if targets.ndim == logits.ndim:
+            targets = targets.squeeze(1)
+        targets_one_hot = F.one_hot(targets.long(), num_classes=logits.shape[1]).movedim(-1, 1).float()
+        dims = tuple(range(2, logits.ndim))
         intersection = torch.sum(probs * targets_one_hot, dim=dims)
         cardinality = torch.sum(probs + targets_one_hot, dim=dims)
         
@@ -252,12 +275,14 @@ class MultiClassDiceLoss(nn.Module):
         return 1.0 - dice_score.mean()
 
 class DynamicSpatialWellLoss(nn.Module):
-    def __init__(self, x_bound, y_target):
+    def __init__(self, x_bound, y_target, steepness=1.0):
         super().__init__()
         self.x = x_bound
         self.y = y_target
-        # Wrapped in nn.Parameter so your Adam optimizer can successfully track and learn it
-        self.steepness = torch.tensor([1.0])
+        self.steepness = float(steepness)
+        if not np.isfinite(self.steepness) or self.steepness <= 0:
+            raise ValueError('spatial_well_steepness must be finite and positive')
+        self.last_cost_map = None
 
     def forward(self, top_down_view_dithed):
         # 1. Collapse to 1D lateral profile
@@ -331,13 +356,27 @@ def main():
     args = parser.parse_args()
     
     raw_config = load_config(args.config)
+    resume = raw_config.get('resume_checkpoint')
+    checkpoint = read_checkpoint(resume) if resume else None
+    if checkpoint is not None:
+        raw_config = resume_config(raw_config, checkpoint)
     
+    require_accumulation_steps(raw_config)
+    levels(raw_config.get('slm_bit_depth', 8))
+    if not any(raw_config.get(k + '_weight', 0) > 0 for k in
+               ('ce_loss', 'dice_loss', 'mae_loss', 'mse_loss', 'tv_loss', 'spatial_multi_well_loss')):
+        raise ValueError('Enable at least one loss weight in YAML')
+    if checkpoint is not None and checkpoint['epoch'] + 1 >= raw_config['max_epochs']:
+        raise ValueError('max_epochs must exceed the completed checkpoint epoch count')
+    if checkpoint is not None and checkpoint['early_stopping']['early_stop'] and not raw_config.get('resume_reset_early_stopping', False):
+        raise ValueError('Set resume_reset_early_stopping: true to continue an early-stopped run')
     # 3. Directories
     model_name = f"{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-    training_results_dir = os.path.join(raw_config.get('training_data_path', 'training_results'), model_name)
+    training_results_dir = (checkpoint['config']['training_results_dir'] if checkpoint is not None
+                            else os.path.abspath(os.path.join(raw_config.get('training_data_path', 'training_results'), model_name)))
     makedirs(training_results_dir)
     
-    config = expand_config(raw_config, training_results_dir)
+    config = expand_config(copy.deepcopy(raw_config), training_results_dir)
 
     # 2. Setup Seeding
     random_seed = config.get('random_seed', 42)
@@ -346,9 +385,9 @@ def main():
     random.seed(random_seed)
     
     # Save the FULL config (including the calculated values) for reproducibility
-    with open(os.path.join(training_results_dir, 'config.yaml'), 'w') as f:
-        for k, v in config.items():
-            f.write(f"{k}: {v}\n")
+    config_name = 'resume_config.yaml' if checkpoint is not None else 'config.yaml'
+    with open(os.path.join(training_results_dir, config_name), 'w') as f:
+        yaml.safe_dump(config, f, sort_keys=False)
 
     print(f"🚀 Training started: {model_name}")
     print(f"   Image Volume: {config['image_volume']}")
@@ -360,9 +399,11 @@ def main():
     model = ParallelEndToEndModel(config)
     
     main_device = torch.device(config.get('cnn_device', 'cuda:0'))
-    initial_mask = get_initial_phase_mask(config)
+    initial_mask = (checkpoint['raw_phase'].numpy() if checkpoint is not None
+                    else get_initial_phase_mask(config))
     # save initial mask as a png scaled between 0-255
-    save_normalized_png(initial_mask, os.path.join(training_results_dir, 'initial_phase_mask.png'))
+    if checkpoint is None:
+        save_normalized_png(initial_mask, os.path.join(training_results_dir, 'initial_phase_mask.png'))
     mask_param = nn.Parameter(torch.from_numpy(initial_mask).float().to(main_device))
     
     # Loss setup
@@ -390,32 +431,17 @@ def main():
     criterion_dict['tv_loss'] = TotalVariationLoss()
     criterion_dict['spatial_multi_well_loss'] = DynamicSpatialWellLoss(
         x_bound=config.get('spatial_well_x'), 
-        y_target=config.get('spatial_well_y')
+        y_target=config.get('spatial_well_y'),
+        steepness=config.get('spatial_well_steepness', 1.0)
     )
 
 
-    # 3. Setup Optimizer
-    # Check if spatial multi-well loss is actively being used based on its weight configuration
-    is_smw_active = config.get('spatial_multi_well_loss_weight', 0.0) > 0.0
-    
-    if config.get('freeze_slm', False):
-        if is_smw_active:
-            optimizer = Adam([
-                {'params': list(model.parameters()), 'lr': config['initial_learning_rate']},
-                {'params': criterion_dict['spatial_multi_well_loss'].parameters(), 'lr': config['initial_learning_rate'] * 0.1}
-            ]) 
-        else:
-            optimizer = Adam(list(model.parameters()), lr=config['initial_learning_rate'])
-    else:
-        if is_smw_active:
-            optimizer = Adam([
-                {'params': list(model.parameters()) + [mask_param], 'lr': config['initial_learning_rate']},
-                {'params': criterion_dict['spatial_multi_well_loss'].parameters(), 'lr': config['initial_learning_rate'] * 0.1}
-            ]) 
-        else:
-            optimizer = Adam(list(model.parameters()) + [mask_param], lr=config['initial_learning_rate'])
+    # The penalty shape is a fixed YAML hyperparameter, not an optimizer parameter.
+    params = list(model.parameters())
+    if not config.get('freeze_slm', False):
+        params.append(mask_param)
+    optimizer = Adam(params, lr=config['initial_learning_rate'])
 
-    
     # 2. Setup Scheduler
     # mode='min': We want to reduce LR when loss stops decreasing (minimizing)
     # factor=0.5: When triggered, cut LR in half.
@@ -444,14 +470,13 @@ def main():
     labels_dict = {}
     val_steps_per_epoch = int(config['nvalid'] / config['batch_size'])
     print("Caching validation data...")
-    for i in range(val_steps_per_epoch):
-        # This calls your random generation logic
-        data_pair = train_ds[i] 
-        val_samples.append(data_pair)
-        xyz = data_pair[0].tolist()
-        target = data_pair[1].tolist()
-        labels_dict[i] = {'xyz': xyz, 'target':target}
-         
+    if checkpoint is not None:
+        val_samples = checkpoint['val_samples']
+    else:
+        val_samples = [train_ds[i] for i in range(val_steps_per_epoch)]
+    for i, (xyz, target) in enumerate(val_samples):
+        labels_dict[i] = {'xyz': xyz.tolist(), 'target': target.tolist()}
+
     path_labels = os.path.join(training_results_dir,'labels.pickle')
     with open(path_labels, 'wb') as handle:
         pickle.dump(labels_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
@@ -461,10 +486,17 @@ def main():
     
     
     # 6. Loop
-    train_losses = []
-    val_losses = []
+    train_losses = list(checkpoint['train_losses']) if checkpoint is not None else []
+    val_losses = list(checkpoint['val_losses']) if checkpoint is not None else []
+    start_epoch = 0
+    if checkpoint is not None:
+        # Restore RNG last, after all model/data construction has consumed randomness.
+        start_epoch = restore_checkpoint(checkpoint, model, mask_param, optimizer, scheduler,
+                                         early_stopper, raw_config.get('resume_reset_early_stopping', False))
+    if start_epoch >= config['max_epochs']:
+        raise ValueError('max_epochs must exceed the completed checkpoint epoch count')
     with MemorySnapshot(os.path.join(training_results_dir, "crash_snapshot.pickle")) as snapshot:
-        for epoch in range(config['max_epochs']):
+        for epoch in range(start_epoch, config['max_epochs']):
             loss = train_one_epoch(model, train_loader, optimizer, criterion_dict, 
                                    mask_param, config, epoch)
             train_losses.append(loss)
@@ -491,59 +523,21 @@ def main():
                 snapshot.dump()
                 snapshot.end()
                 
-            with torch.no_grad():
-                max_stroke = 2 * np.pi # Or whatever your physical SLM's max stroke is
-                
-                # 2. Wrap the raw parameter just like in training
-                wrapped_phase = torch.remainder(mask_param, max_stroke)
-                
-                # 3. Scale it to the 8-bit 0-255 range
-                scaled_to_bits = (wrapped_phase / max_stroke) * 255.0
-                
-                # 4. Round to exact integer levels
-                rounded_bits = torch.round(scaled_to_bits)
-                
-                # 5. Convert to standard 8-bit image format (uint8 array)
-                # Move it off the GPU, convert to numpy, and change type to uint8
-                slm_display_image = rounded_bits.cpu().numpy().astype(np.uint8)
-                
-            def convert_to_8bit_image(mask_param):
-                with torch.no_grad():
-                    max_stroke = 2 * np.pi # Or whatever your physical SLM's max stroke is
-                    
-                    # 2. Wrap the raw parameter just like in training
-                    wrapped_phase = torch.remainder(mask_param, max_stroke)
-                    
-                    # 3. Scale it to the 8-bit 0-255 range
-                    scaled_to_bits = (wrapped_phase / max_stroke) * 255.0
-                    
-                    # 4. Round to exact integer levels
-                    rounded_bits = torch.round(scaled_to_bits)
-                    
-                    # 5. Convert to standard 8-bit image format (uint8 array)
-                    # Move it off the GPU, convert to numpy, and change type to uint8
-                    slm_display_image = rounded_bits.cpu().numpy().astype(np.uint8)
-                    return slm_display_image
-            
-            # Save artifacts
-            np.savetxt(os.path.join(training_results_dir, 'train_losses.txt'), train_losses, delimiter=',')
-            np.savetxt(os.path.join(training_results_dir, 'val_losses.txt'), val_losses, delimiter=',')
-            
-            epoch_png_path = os.path.join(training_results_dir,"learned_phase_masks","png",f"mask_phase_epoch_{epoch}.png")
-            epoch_tif_path = os.path.join(training_results_dir,"learned_phase_masks","tif",f"mask_phase_epoch_{epoch}.tif")
-            epoch_bmp_path = os.path.join(training_results_dir,"learned_phase_masks","bmp",f"mask_phase_epoch_{epoch}.bmp")
-            
-            # create directories if they don't exist
-            os.makedirs(os.path.dirname(epoch_png_path), exist_ok=True)
-            os.makedirs(os.path.dirname(epoch_tif_path), exist_ok=True)
-            os.makedirs(os.path.dirname(epoch_bmp_path), exist_ok=True)
-            
-            #io.imsave(epoch_tif_path, mask_param.detach().cpu().numpy().astype(np.float32))
-            io.imsave(epoch_tif_path, slm_display_image)
-            io.imsave(epoch_bmp_path, slm_display_image)
-            save_png(slm_display_image, epoch_png_path, config)
-            #savePhaseMask(slm_display_image, epoch, training_results_dir)
-            
+            np.savetxt(os.path.join(training_results_dir, 'train_losses.txt'), train_losses)
+            np.savetxt(os.path.join(training_results_dir, 'val_losses.txt'), val_losses)
+            phase_rad = mask_param.detach().cpu().numpy().astype(np.float32)
+            phase_dir = os.path.join(training_results_dir, 'learned_phase_masks')
+            os.makedirs(os.path.join(phase_dir, 'radians'), exist_ok=True)
+            io.imsave(os.path.join(phase_dir, 'radians', f'mask_phase_epoch_{epoch}.tif'), phase_rad)
+            bits = config.get('slm_bit_depth', 8)
+            save_codes(phase_rad, os.path.join(phase_dir, 'tif', f'mask_phase_epoch_{epoch}.tif'), bits)
+            if bits <= 8:
+                save_codes(phase_rad, os.path.join(phase_dir, 'bmp', f'mask_phase_epoch_{epoch}.bmp'), bits)
+            # Always write a complete latest checkpoint after a finished epoch.
+            save_checkpoint(os.path.join(training_results_dir, 'checkpoints', 'latest.pt'),
+                            model, mask_param, optimizer, scheduler, early_stopper, epoch,
+                            raw_config, config, train_losses, val_losses, val_samples)
+
             if epoch % config.get('save_epoch_interval', 5) == 0 or epoch == config['max_epochs'] - 1 or early_stopper.early_stop:
                 epoch_model_path = os.path.join(training_results_dir, "models", f'net_{epoch}.pt')
                 os.makedirs(os.path.dirname(epoch_model_path), exist_ok=True)

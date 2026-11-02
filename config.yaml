@@ -17,7 +17,7 @@ ntrain: 384  #960, 384          # default 640, how many bead volumes per epoch, 
 nvalid: 128  #128             # default 128
 
 batch_size: 1              # Training batch size
-accumulation_steps: 32 #32   # Gradient accumulation steps to simulate larger batch sizes
+accumulation_steps: 32       # Required positive integer: microbatches per optimizer step; gradients averaged by sample count
 max_epochs: 1000 #1000            # 200
 save_epoch_interval: 2
 initial_learning_rate: 1.0e-1
@@ -173,3 +173,10 @@ supersample_factor: 3      # Supersampling factor for PSF generation (1 to disab
 ###### MULIT GPU SETUP
 cnn_device: "cuda:0"
 #phys_device: "cuda:1"
+# Phase I/O: code images carry metadata; legacy files need explicit units.
+slm_bit_depth: 8                 # 8 now; 10 for 0..1023 hardware codes
+phase_mask_input_units: null      # legacy files: radians or drive_codes
+spatial_well_steepness: 1.0        # fixed positive scalar, inverse pixels
+# Resume at the next epoch from a complete checkpoint (not legacy net_*.pt).
+resume_checkpoint: null           # /absolute/run/checkpoints/latest.pt
+resume_reset_early_stopping: false

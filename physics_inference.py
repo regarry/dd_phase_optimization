@@ -1,3 +1,4 @@
+from physics.phase_io import load_phase_config
 import os
 import argparse
 import pickle
@@ -42,13 +43,13 @@ def main():
     # Build mask file path automatically using the epoch input
     mask_filename = f"mask_phase_epoch_{args.epoch-1}_0.tiff"
     mask_path = os.path.join(args.input_dir, mask_filename)
-    mask_np = skimage.io.imread(mask_path)
+    mask_np = load_phase_config(mask_path, config)
     mask_tensor = torch.from_numpy(mask_np).type(torch.FloatTensor).to(config['device'])
     mask_param = torch.nn.Parameter(mask_tensor, requires_grad=False)
 
     # Pre-load the paper phase mask if provided
     if args.paper_mask:
-        paper_mask_np = skimage.io.imread(args.paper_mask)
+        paper_mask_np = load_phase_config(args.paper_mask, config)
         paper_mask_tensor = torch.from_numpy(paper_mask_np).type(torch.FloatTensor).to(config['device'])
         paper_mask_param = torch.nn.Parameter(paper_mask_tensor, requires_grad=False)
 

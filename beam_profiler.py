@@ -1,3 +1,4 @@
+from physics.phase_io import load_phase_config
 import os
 import argparse
 import numpy as np
@@ -66,7 +67,7 @@ def run_beam_profiler(config_path=None, mask_path="", output_dir="beam_profile_t
     # Generate or load phase mask
     if mask_path:
         print(f"Loading phase mask from {mask_path}")
-        mask_np = skimage.io.imread(mask_path).astype(np.float32)
+        mask_np = load_phase_config(mask_path, config)
     elif gen_phase_mask == "axicon":
         config['initial_phase_mask'] = 'axicon'
         mask_np = get_initial_phase_mask(config)
@@ -116,9 +117,6 @@ def run_beam_profiler(config_path=None, mask_path="", output_dir="beam_profile_t
         
     print(f"mask_tensor shape: {mask_tensor.shape}, dtype: {mask_tensor.dtype}, device: {mask_tensor.device}")    
     # Convert to radians if max value is 255
-    if mask_tensor.max() == 255:
-        print("Converting mask from 8-bit to radians")
-        mask_tensor = (mask_tensor / 255.0) * 2 * np.pi
         
     with torch.no_grad():
         if lens_approach == 'against_lens':

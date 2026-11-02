@@ -39,9 +39,7 @@ class ParallelEndToEndModel(nn.Module):
             for param in self.unet.parameters():
                 param.requires_grad = False
             self.unet.eval()
-        else:
-            # Ensure it's in training mode if not frozen
-            self.unet.train()
+        # Otherwise preserve model.train()/eval() selected by the training loop.
 
         # --- Step 1: Physical Simulation (Multi-GPU) ---
         # Run physics once and unpack based on your configuration rules

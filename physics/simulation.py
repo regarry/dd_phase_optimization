@@ -333,34 +333,15 @@ class PhysicalSLM(nn.Module):
         
         # 2. Hardware specs
         self.max_stroke = max_stroke
-        self.levels = 2**bits - 1  # 8-bit (0 to 255)
+        from physics.phase_io import levels
+        if max_stroke != 2*np.pi:
+            raise ValueError('Only a full 2pi phase period is supported')
+        self.bits = bits
+        self.levels = levels(bits)
 
     def forward(self):
-        # --- PHYSICS & HARDWARE BOTTLENECK ---
-        
-        # 1. Wrap the unbounded phase into the SLM's physical range.
-        # e.g., 7.0 radians becomes ~0.71 radians. 
-        # torch.remainder keeps gradients perfectly intact.
-        wrapped_phase = torch.remainder(self.raw_phase, self.max_stroke)
-        
-        # 2. Scale phase to the 0-255 hardware scale
-        scaled_to_bits = (wrapped_phase / self.max_stroke) * self.levels
-        
-        # 3. Round to nearest 8-bit integer level
-        rounded_bits = torch.round(scaled_to_bits)
-        
-        # 4. Scale BACK to physical phase units (radians) for the ASM propagator
-        quantized_phase = (rounded_bits / self.levels) * self.max_stroke
-        
-        # 5. THE STE TRICK
-        # Forward pass: Uses 'quantized_phase' (strictly 8-bit physics).
-        # Backward pass: Uses 'wrapped_phase' (smooth gradients for Adam).
-        slm_output_phase = wrapped_phase + (quantized_phase - wrapped_phase).detach()
-        
-        # Ensure it returns complex exponent if your ASM expects the field E = A * exp(i * phi)
-        # return torch.exp(1j * slm_output_phase)
-        
-        return slm_output_phase
+        from physics.phase_io import quantize_phase
+        return quantize_phase(self.raw_phase, self.bits)
 
 def get_max_aperture_radius_pixels(wavelength_m, focal_length_m, pixel_size_m):
     """
@@ -386,27 +367,11 @@ def get_max_aperture_radius_pixels(wavelength_m, focal_length_m, pixel_size_m):
     return r_max_pixels
 
 def apply_8bit_physics(raw_phase, max_stroke=2*np.pi):
-    """
-    Converts a continuous phase tensor into an 8-bit quantized physical mask,
-    preserving gradients for the optimizer via the STE trick.
-    """
-    # 1. Wrap the phase (e.g., 7.0 rads -> ~0.71 rads)
-    wrapped_phase = torch.remainder(raw_phase, max_stroke)
-    
-    # 2. Scale to 8-bit range (0 to 255)
-    levels = 255.0
-    scaled_to_bits = (wrapped_phase / max_stroke) * levels
-    
-    # 3. Hardware bottleneck: Round to nearest integer (0, 1, 2... 255)
-    rounded_bits = torch.round(scaled_to_bits)
-    
-    # 4. Scale back to physical phase (radians) for ASM
-    quantized_phase = (rounded_bits / levels) * max_stroke
-    
-    # 5. STE Trick: Forward uses quantized, Backward uses wrapped
-    physical_mask = wrapped_phase + (quantized_phase - wrapped_phase).detach()
-    
-    return physical_mask
+    """Legacy 8-bit API; training uses configurable quantize_phase instead."""
+    from physics.phase_io import quantize_phase
+    if max_stroke != 2*np.pi:
+        raise ValueError('Only a full 2pi phase period is supported')
+    return quantize_phase(raw_phase, 8)
 
 class OpticsSimulation(nn.Module):
     def __init__(self, config, device):

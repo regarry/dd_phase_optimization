@@ -1,3 +1,4 @@
+from physics.phase_io import load_phase_config
 import os
 import sys
 import time
@@ -209,12 +210,9 @@ def run_inference(input_dir, epoch, res_dir="inference_results", num_inferences=
     else:
         raise FileNotFoundError(f"Mask file not found for epoch {epoch} in {input_dir}")
     
-    mask_np = skimage.io.imread(mask_path)
+    mask_np = load_phase_config(mask_path, config)
     mask_tensor = torch.from_numpy(mask_np).type(torch.FloatTensor).to(device)
     
-    if mask_tensor.max() == 255:
-        print("Converting mask from 8-bit to radians")
-        mask_tensor = (mask_tensor / 255.0) * 2 * np.pi
     
     mask_param = torch.nn.Parameter(mask_tensor, requires_grad=False)
     

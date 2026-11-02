@@ -1,3 +1,4 @@
+from physics.phase_io import load_phase_config
 import numpy as np
 import torch
 import os
@@ -109,7 +110,7 @@ def get_initial_phase_mask(config):
         print(f"Initializing from file: {path}...")
         
         # Use our robust loader (handles checks and errors)
-        mask = load_tiff(path) # Ensure load_tiff is defined in your broader scope
+        mask = load_phase_config(path, config) # Ensure load_tiff is defined in your broader scope
         
         # Safety check for dimensions
         if mask.shape != (size, size):

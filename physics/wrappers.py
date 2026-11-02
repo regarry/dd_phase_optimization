@@ -110,9 +110,6 @@ class MultiGpuSimulation(nn.Module):
                 mask_tensor = mask_param
         
 
-            if mask_tensor.max() == 255:
-                print("Converting mask from 8-bit to radians")
-                mask_tensor = (mask_tensor / 255.0) * 2 * np.pi
             if lens_approach == 'against_lens':
                 print("are you sure you didnt mean fourier lens?")
                 output_layer = self.replicas[0].against_lens(mask_tensor)

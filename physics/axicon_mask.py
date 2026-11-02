@@ -3,8 +3,8 @@ from PIL import Image
 import os
 import matplotlib.pyplot as plt
 import math
-from PhaseMaskNorm import process_phase_mask
-from bessel import generate_axicon_phase_mask
+from physics.phase_mask_norm import process_phase_mask
+from physics.bessel import generate_axicon_phase_mask
 
 def calculate_bessel_beam_properties(
     slm_width_pixels,
