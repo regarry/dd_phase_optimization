@@ -24,7 +24,7 @@ DICE_WEIGHTS=0 #(0.0 0.0 0.0)  #(1.0 1.0 0.1)
 MAE_WEIGHTS=0 #(0.0 0.0 0.0)
 MSE_WEIGHTS=0 #(0.0 0.0 0.0)
 SLL_WEIGHTS=1.0 #(0.0 0.0 0.0)
-SIDE_LOBE_RADII=(25 50 75 100)
+SIDE_LOBE_RADII=(5 10 15 20)
 
 
 # 2. Loop through all permutations
