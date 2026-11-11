@@ -14,3 +14,23 @@ temp_configs/
 codebase_dump.txt
 DeepBeam/
 *.png
+
+# Local environments, credentials and runtime artifacts
+.venv/
+.env
+.env.*
+!.env.example
+*.pt
+*.pth
+*.pickle
+*.npz
+*.npy
+*.mat
+*.log
+.pytest_cache/
+.mpl_cache/
+.ipynb_checkpoints/
+.vscode/
+*.tiff
+*.tif
+*.bmp

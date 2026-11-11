@@ -2,7 +2,6 @@
 #BSUB -n 4
 #BSUB -W 1:00
 #BSUB -R "rusage[mem=4GB]"
-#BSUB -R "select[hname!='gpu18']"
 #BSUB -q bme_gpu
 #BSUB -gpu "num=1:mode=shared:mps=no"
 ##BSUB -R "select[a100]"
@@ -11,12 +10,14 @@
 #BSUB -e ./logs/.%J
 
 # Load environment
-module load conda
-module load cuda/12.3
+if [[ -n "${DD_MODULES:-}" ]]; then
+    read -r -a DD_MODULE_NAMES <<< "$DD_MODULES"
+    module load "${DD_MODULE_NAMES[@]}"
+fi
 
 # Check GPU status
 hostname
 nvidia-smi
 
 # Run the inference script using variables passed from the environment
-/rsstu/users/a/agrinba/DeepDesign/deepdesign/bin/python ./RunProfilerInference.py "$TRAINING_FOLDER" "$EPOCH"
+"${DD_PYTHON:-python}" ./RunProfilerInference.py "$TRAINING_FOLDER" "$EPOCH"

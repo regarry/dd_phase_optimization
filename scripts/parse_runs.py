@@ -261,5 +261,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
-    # python parse_runs.py 20260710-164915 -o summary.txt -m 16

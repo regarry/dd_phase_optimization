@@ -3,41 +3,21 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
-#SBATCH --time=02:00:00
-#SBATCH --mem=4G
-#SBATCH --qos=short_gpu
-#SBATCH --partition=gpu_partners
-#SBATCH --gres=gpu:l40s:3
+#SBATCH --time=24:00:00
+#SBATCH --mem=32G
+#SBATCH --gres=gpu:2
 #SBATCH --output=./logs/train_dd.%j.out
 #SBATCH --error=./logs/train_dd.%j.err
-
 set -euo pipefail
-
-# Run from the original submission directory
 cd "$SLURM_SUBMIT_DIR"
-
-# GPU and node information
-hostname
-nvidia-smi
-
-# Load environment
-module load conda
-module load cuda/12.3
-
-# Optional debugging
-# export CUDA_LAUNCH_BLOCKING=1
-
-# Get the unique config file from the submission script
-CONFIG_FILE="__CONFIG_FILE__"
-
-echo "Job is running with config file: $CONFIG_FILE"
-echo "--- Config Contents ---"
-cat "$CONFIG_FILE"
-echo "-----------------------"
-
-# Clean up config on exit, including failed jobs
-trap 'echo "Cleaning up $CONFIG_FILE"; rm -f -- "$CONFIG_FILE"' EXIT
-
-# Run training
-conda run -p /rsstu/users/a/agrinba/DeepDesign/deepdesign \
-    python ./training/training.py --config "$CONFIG_FILE"
+if [[ -n "${DD_MODULES:-}" ]]; then
+    read -r -a DD_MODULE_NAMES <<< "$DD_MODULES"
+    module load "${DD_MODULE_NAMES[@]}"
+fi
+DD_PYTHON="${DD_PYTHON:-python}"
+source ./scripts/slurm/worker_runtime.sh
+"$DD_PYTHON" -m utils.worker_preflight
+CONFIG_FILE=__CONFIG_FILE__
+"$DD_PYTHON" -u -m training.training --config "$CONFIG_FILE" \
+    --worker-timeout 60 --progress-every 32 --wall-seconds __WALL_SECONDS__ \
+    --stop-margin-seconds 900

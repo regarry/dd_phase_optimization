@@ -2,6 +2,15 @@ import random
 import numpy as np
 from scipy.stats import truncnorm
 
+
+def _jitter_coordinate(anchor, allowed, radius):
+    """Sample an allowed integer position within inclusive +/- radius."""
+    if isinstance(allowed, range) and allowed.step == 1:
+        return random.randint(max(allowed.start, anchor - radius),
+                              min(allowed.stop - 1, anchor + radius))
+    return random.choice([value for value in allowed if abs(value - anchor) <= radius])
+
+
 def create_random_emitters(config):
     """
     Generates positions for ONE single image volume.
@@ -10,6 +19,9 @@ def create_random_emitters(config):
     """
     # Extract config
     num_particles_range = config['num_particles_range']
+    lateral_jitter = config.get('z_coupled_lateral_jitter_px', 0)
+    if isinstance(lateral_jitter, (bool, np.bool_)) or not isinstance(lateral_jitter, (int, np.integer)) or lateral_jitter < 0:
+        raise ValueError('z_coupled_lateral_jitter_px must be a nonnegative integer')
     
     # Handle spatial ranges (convert to list if they are [min, max] pairs)
     spatial_x = config['particle_spatial_range_x']
@@ -73,13 +85,15 @@ def create_random_emitters(config):
     beads = []
     between_beads = [] 
 
-    # A. Z-Coupled Pairs (Vertical "Filaments")
+    # A. Z-Coupled Pairs. Jitter is the second bead's displacement relative
+    # to the first, independently in camera-column x and camera-row y.
     for _ in range(n_z_coupled // 2):
         x = random.choice(spatial_x_list)
         y = random.choice(spatial_y_list)
         
         z1 = get_z_coordinate()
         z2 = get_z_coordinate() 
+        connect_pair = False
         
         if z_coupled_spacing is not None:
             min_s, max_s = z_coupled_spacing
@@ -88,13 +102,28 @@ def create_random_emitters(config):
             if valid_spacings:
                 spacing = random.choice(valid_spacings)
                 z2 = z1 + spacing
-                
-                step = 1 if z2 > z1 else -1
-                for u in range(z1 + step, z2, step):
+                connect_pair = True
+
+        # Sampling directly from valid coordinates avoids clipped-edge piles
+        # and keeps both beads inside the PSF-safe placement region. At zero,
+        # draw no additional random numbers, preserving legacy seeded scenes.
+        x2, y2 = x, y
+        if lateral_jitter:
+            x2 = _jitter_coordinate(x, spatial_x_list, lateral_jitter)
+            y2 = _jitter_coordinate(y, spatial_y_list, lateral_jitter)
+
+        if connect_pair:
+            step = 1 if z2 > z1 else -1
+            for u in range(z1 + step, z2, step):
+                if lateral_jitter:
+                    fraction = (u - z1) / (z2 - z1)
+                    between_beads.append([round(x + fraction * (x2 - x)),
+                                          round(y + fraction * (y2 - y)), u])
+                else:
                     between_beads.append([x, y, u])
 
         beads.append([x, y, z1])
-        beads.append([x, y, z2])
+        beads.append([x2, y2, z2])
 
     # B. Remaining Random Beads
     for _ in range(n_random):

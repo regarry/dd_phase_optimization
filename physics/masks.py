@@ -90,6 +90,12 @@ def get_initial_phase_mask(config):
         wrapped_airy_phase = 2 * np.pi - wrapped_airy_phase # Invert phase for SLM compatibility
         return wrapped_airy_phase.astype(np.float32)
 
+    # Gaussian illumination: the simulator supplies the incident Gaussian
+    # amplitude; zero phase leaves that beam unmodulated.
+    elif mode == "gaussian":
+        print("Initializing Gaussian illumination (zero phase modulation)...")
+        return np.zeros((size, size), dtype=np.float32)
+
     # 5. Flat / Empty initialization
     elif mode == "empty":
         print("Initializing with Flat (Zero) mask...")

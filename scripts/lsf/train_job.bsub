@@ -15,10 +15,11 @@ nvidia-smi
 #nvidia-smi --query-gpu=index,name,ecc.errors.uncorrectable.aggregate,memory.total,utilization.gpu --format=csv
 #nvidia-smi topo -m
 
-module load conda
-module load cuda/12.3
+if [[ -n "${DD_MODULES:-}" ]]; then
+    read -r -a DD_MODULE_NAMES <<< "$DD_MODULES"
+    module load "${DD_MODULE_NAMES[@]}"
+fi
 #export CUDA_LAUNCH_BLOCKING=1
-#conda activate /rsstu/users/a/agrinba/DeepDesign/deepdesign
 
 # Get the unique config file path from the first argument
 CONFIG_FILE="__CONFIG_FILE__"
@@ -27,8 +28,7 @@ echo "Job is running with config file: $CONFIG_FILE"
 echo "--- Config Contents ---"
 cat $CONFIG_FILE
 echo "-----------------------"
-#cd /rsstu/users/a/agrinba/DeepDesign/deepdesign
-conda run -p /rsstu/users/a/agrinba/DeepDesign/deepdesign python ./training/training.py --config $CONFIG_FILE
+"${DD_PYTHON:-python}" -u -m training.training --config "$CONFIG_FILE"
 
 # Optional: Clean up the copied config file
 echo "Cleaning up $CONFIG_FILE"

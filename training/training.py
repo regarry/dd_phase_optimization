@@ -26,6 +26,7 @@ from physics.masks import get_initial_phase_mask
 from physics.simulation import TotalVariationLoss
 from physics.phase_io import quantize_phase, save_codes, levels
 from training.checkpoint import read_checkpoint, resume_config, restore_checkpoint, save_checkpoint
+from training.runtime import TrainingRuntime, atomic_json
 import yaml
 import copy
 
@@ -100,7 +101,7 @@ def require_accumulation_steps(config):
         raise ValueError('accumulation_steps must be a positive integer')
     return steps
 
-def train_one_epoch(model, dataloader, optimizer, loss_funcs, mask_param, config, epoch):
+def train_one_epoch(model, dataloader, optimizer, loss_funcs, mask_param, config, epoch, progress=None):
     """
     Runs one epoch of training using dynamic loss functions.
     loss_funcs: dict of standard PyTorch loss functions, e.g., {'mse': nn.MSELoss(), 'tv_loss': TVLoss()}
@@ -133,6 +134,8 @@ def train_one_epoch(model, dataloader, optimizer, loss_funcs, mask_param, config
         # final microbatch does not receive the same weight as a full one.
         batch_samples = bead_xyz_list.shape[0]
         (loss * batch_samples).backward()
+        if progress is not None:
+            progress('train', batch_idx, len(dataloader), loss.item(), mask_param.grad)
         window_samples += batch_samples
 
         if (batch_idx + 1) % grad_accum == 0 or batch_idx == (len(dataloader) - 1):
@@ -154,7 +157,7 @@ def train_one_epoch(model, dataloader, optimizer, loss_funcs, mask_param, config
     return total_loss / total_samples
 
 
-def validate_one_epoch(model, dataloader, loss_funcs, mask_param, config, epoch):
+def validate_one_epoch(model, dataloader, loss_funcs, mask_param, config, epoch, progress=None):
     """
     Runs one epoch of validation using dynamic loss functions.
     """
@@ -178,6 +181,8 @@ def validate_one_epoch(model, dataloader, loss_funcs, mask_param, config, epoch)
             # LOSS CALCULATION
             loss, _ = compute_total_loss(outputs, targets, physical_slm_phase, config, loss_funcs, column_sums if config.get('SpatialMulitWellLoss', False) else None)
             total_loss += loss.item()
+            if progress is not None:
+                progress('validation', batch_idx, len(dataloader), loss.item())
 
     avg_loss = total_loss / len(dataloader)
     print(f"==> Validation Epoch {epoch+1} Complete. Avg Loss: {avg_loss:.4f}")
@@ -353,6 +358,13 @@ def main():
     # 1. Load & Expand Config
     parser = argparse.ArgumentParser()
     parser.add_argument('-c', '--config', default='config.yaml', help='Path to config')
+    parser.add_argument('--run-dir', help='Explicit persistent run folder; resume must keep the saved folder')
+    parser.add_argument('--worker-timeout', type=float, default=0,
+                        help='DataLoader worker timeout in seconds; Slurm launchers use 60')
+    parser.add_argument('--progress-every', type=int, default=0)
+    parser.add_argument('--wall-seconds', type=float)
+    parser.add_argument('--stop-margin-seconds', type=float, default=900)
+    parser.add_argument('--require-phase-gradient', action='store_true')
     args = parser.parse_args()
     
     raw_config = load_config(args.config)
@@ -373,8 +385,15 @@ def main():
     # 3. Directories
     model_name = f"{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     training_results_dir = (checkpoint['config']['training_results_dir'] if checkpoint is not None
-                            else os.path.abspath(os.path.join(raw_config.get('training_data_path', 'training_results'), model_name)))
+                            else os.path.abspath(args.run_dir or os.path.join(raw_config.get('training_data_path', 'training_results'), model_name)))
+    if checkpoint is not None and args.run_dir and os.path.abspath(args.run_dir)!=os.path.abspath(training_results_dir):
+        raise ValueError('Resume must preserve the checkpoint run directory')
+    if checkpoint is None and os.path.exists(os.path.join(training_results_dir,'checkpoints','latest.pt')):
+        raise ValueError('Run already has a checkpoint; use resume_checkpoint instead of restarting')
     makedirs(training_results_dir)
+    runtime=TrainingRuntime(training_results_dir,args.progress_every,args.wall_seconds,
+                            args.stop_margin_seconds,args.require_phase_gradient,time.monotonic())
+    atomic_json(os.path.join(training_results_dir,'runtime_controls.json'),vars(args))
     
     config = expand_config(copy.deepcopy(raw_config), training_results_dir)
 
@@ -463,7 +482,7 @@ def main():
     # 5. Training Dataloader
     train_steps_per_epoch = int(config['ntrain'] / config['batch_size'])
     train_ds = SyntheticMicroscopeData(epoch_length=train_steps_per_epoch, config=config)
-    train_loader = DataLoader(train_ds, batch_size=config['batch_size'], shuffle=True, num_workers=4)
+    train_loader = DataLoader(train_ds, batch_size=config['batch_size'], shuffle=True, num_workers=4, timeout=args.worker_timeout)
     
     # Validation Dataloader
     val_samples = []
@@ -482,7 +501,7 @@ def main():
         pickle.dump(labels_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
     
     val_ds = ValidationDataset(val_samples)
-    val_loader = DataLoader(val_ds, batch_size=config['batch_size'], shuffle=False, num_workers=4)
+    val_loader = DataLoader(val_ds, batch_size=config['batch_size'], shuffle=False, num_workers=4, timeout=args.worker_timeout)
     
     
     # 6. Loop
@@ -497,10 +516,19 @@ def main():
         raise ValueError('max_epochs must exceed the completed checkpoint epoch count')
     with MemorySnapshot(os.path.join(training_results_dir, "crash_snapshot.pickle")) as snapshot:
         for epoch in range(start_epoch, config['max_epochs']):
+            if not runtime.can_start_epoch():
+                if not runtime.timings:
+                    raise RuntimeError('No full epoch fits before the configured stop margin')
+                print('Stopping at verified checkpoint before another epoch would exceed the wall-time margin.',flush=True)
+                break
+            runtime.epoch=epoch
+            cycle_started=time.monotonic()
             loss = train_one_epoch(model, train_loader, optimizer, criterion_dict, 
-                                   mask_param, config, epoch)
+                                   mask_param, config, epoch, progress=runtime.progress)
+            train_ended=time.monotonic()
             train_losses.append(loss)
-            val_loss = validate_one_epoch(model, val_loader, criterion_dict, mask_param, config, epoch)
+            val_loss = validate_one_epoch(model, val_loader, criterion_dict, mask_param, config, epoch, progress=runtime.progress)
+            validation_ended=time.monotonic()
             val_losses.append(val_loss)
             scheduler.step(val_loss)
             early_stopper(val_loss)
@@ -542,6 +570,15 @@ def main():
                 epoch_model_path = os.path.join(training_results_dir, "models", f'net_{epoch}.pt')
                 os.makedirs(os.path.dirname(epoch_model_path), exist_ok=True)
                 torch.save(model.state_dict(), epoch_model_path)
+
+            checkpoint_path=os.path.join(training_results_dir,'checkpoints','latest.pt')
+            verified=read_checkpoint(checkpoint_path)
+            if verified['epoch']!=epoch or len(verified['train_losses'])!=len(train_losses):
+                raise RuntimeError('Checkpoint epoch/history read-back verification failed')
+            runtime.record_epoch(epoch,train_ended-cycle_started,validation_ended-train_ended,
+                                 time.monotonic()-validation_ended,len(train_loader),len(val_loader),
+                                 loss,val_loss,checkpoint_path)
+            del verified
                 
             if early_stopper.early_stop:
                 print(f"Early stopping triggered at epoch {epoch+1}. No improvement in validation loss for {early_stopper.patience} epochs.")

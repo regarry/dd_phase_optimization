@@ -4,6 +4,7 @@
 num_particles_range: [2000, 2001] # [min, max] emitters per image. Strong GPU: [450, 550]
 bead_radius: 0.5          # pixels 1.0 default
 z_coupled_ratio: 0.5
+z_coupled_lateral_jitter_px: 3 # Inclusive +/- sample pixels per x/y axis; 0 preserves aligned pairs
 z_coupled_spacing_range: [1, 5] # need to change the code so that the z coupled beads are only generated around the in focus plane
 gaussian_z_bead_dist: False # whether to use a gaussian distribution for the z positions of the beads or uniform 
 z_gaussian_mu: 0.0 # need to finish this

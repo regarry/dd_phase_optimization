@@ -10,6 +10,6 @@ version = "0.1.0"
 
 [tool.setuptools.packages.find]
 # ONLY list the folders that contain your python source code
-include = ["models*", "physics*", "training*", "data*"]
+include = ["models*", "physics*", "training*", "data*", "utils*", "scripts*"]
 # OPTIONAL: Explicitly ignore the junk folders to be safe
 exclude = ["logs*", "images*", "training_results*", "inference_results*"]

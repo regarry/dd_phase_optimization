@@ -7,7 +7,6 @@
 #BSUB -gpu "num=1:mode=exclusive_process:mps=no"
 #BSUB -o ./logs/diag.%J.out
 #BSUB -e ./logs/diag.%J.err
-#BSUB -cwd /rsstu/users/a/agrinba/DeepDesign/deepdesign/dd_phase_optimization
 
 set -euo pipefail
 
@@ -29,8 +28,8 @@ module list 2>&1 | tee -a "$OUTDIR/modules.txt" || true
 
 # lsbatch file check
 echo "=== .lsbatch files ===" > "$OUTDIR/lsbatch.txt"
-ls -l /home/$USER/.lsbatch* 2>/dev/null | sed -n '1,200p' >> "$OUTDIR/lsbatch.txt" || true
-stat /home/$USER/.lsbatch/* 2>/dev/null || true
+ls -l "$HOME"/.lsbatch* 2>/dev/null | sed -n '1,200p' >> "$OUTDIR/lsbatch.txt" || true
+stat "$HOME"/.lsbatch/* 2>/dev/null || true
 
 # nvidia-smi outputs
 nvidia-smi -L > "$OUTDIR/nvidia_smi_list.txt" 2>&1 || true
@@ -82,10 +81,10 @@ except Exception as e:
 PY
 
 # run the python diagnostic inside your conda env (use conda run)
-# change the -p path below if your env path differs
-CONDAPATH=/rsstu/users/a/agrinba/DeepDesign/deepdesign
-echo "Running Python diagnostic (conda env at $CONDAPATH)..."
-conda run -p "$CONDAPATH" --no-capture-output python -u "$PYFILE" > "$OUTDIR/torch_diag.txt" 2>&1 || true
+# Use the activated interpreter or DD_PYTHON override.
+DD_PYTHON="${DD_PYTHON:-python}"
+echo "Running Python diagnostic in the configured environment..."
+"$DD_PYTHON" -u "$PYFILE" > "$OUTDIR/torch_diag.txt" 2>&1 || true
 
 # final tarball for easy attachment to admin ticket
 TARFILE=./logs/diagnostics_${TS}_${LSB_JOBID:-nojob}.tar.gz
