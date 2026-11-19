@@ -204,7 +204,7 @@ def expand_config(config, training_results_dir):
     else:  
         config['N'] = config['phase_mask_upsample_factor'] * config['phase_mask_pixel_size']
 
-    if config["spatial_multi_well_loss_weight"] > 0:
+    if config["spatial_multi_well_loss_weight"] > 0 or config.get('tissue_spatial_loss_weight',0)>0:
         config["SpatialMulitWellLoss"] = True
     
     if config["mse_loss_weight"] > 0:
@@ -215,8 +215,14 @@ def expand_config(config, training_results_dir):
     image_volume = config['image_volume'] # the first two dimensions should be powers of 2 for the u-net [y, x, z] volume of imaging in px (camera coordinates)
     
      
-    # 1. Calculate max defocus depth in meters
-    z_max = image_volume[2] * pixel_size / 2
+    # Focal-plane offsets are pixels. Include the furthest detection defocus.
+    from data.emission import emission_range
+    emission_range(config)
+    depths = np.asarray(config["z_depth_list"], dtype=float)
+    if depths.ndim != 1 or not depths.size or not np.isfinite(depths).all():
+        raise ValueError("z_depth_list requires a nonempty finite list of focal offsets in pixels")
+    config["maximum_detection_defocus_px"] = int(np.ceil(image_volume[2] / 2 + np.max(np.abs(depths))))
+    z_max = config["maximum_detection_defocus_px"] * pixel_size
 
     # 2. Calculate the physical radius of the light cone at z_max
     theta = np.arcsin(config['numerical_aperture'] / config['refractive_index'])

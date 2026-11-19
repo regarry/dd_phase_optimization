@@ -1,4 +1,5 @@
 import random
+import math
 import numpy as np
 from scipy.stats import truncnorm
 
@@ -43,6 +44,22 @@ def create_random_emitters(config):
         spatial_z_list = range(int(spatial_z[0]), int(spatial_z[1]))
     else:
         spatial_z_list = spatial_z
+
+    # Optional fluorescent tissue support restricts bead centres in thickness z,
+    # not illumination propagation x. Omitting it preserves the legacy RNG path.
+    if 'tissue_sample_z_bounds_um' in config:
+        bounds=config['tissue_sample_z_bounds_um']
+        if not isinstance(bounds,(list,tuple)) or len(bounds)!=2:
+            raise ValueError('tissue_sample_z_bounds_um must be [lower, upper] in µm')
+        lo,hi=map(float,bounds)
+        if not math.isfinite(lo+hi) or lo>=hi:
+            raise ValueError('tissue_sample_z_bounds_um must be finite and increasing')
+        if 'px' not in config or not math.isfinite(float(config['px'])) or float(config['px'])<=0:
+            raise ValueError('Tissue sample support requires an explicit positive expanded px in meters')
+        px_um=float(config['px'])*1e6
+        spatial_z_list=[z for z in spatial_z_list if lo<=z*px_um<=hi]
+        if not spatial_z_list:
+            raise ValueError('Tissue sample z bounds contain no allowed sample-grid positions')
 
     # --- Setup Uniform vs. Truncated Gaussian Z Sampling ---
     min_z = min(spatial_z_list)

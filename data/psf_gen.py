@@ -74,7 +74,7 @@ def generate_psf(config, results_dir):
 
     # 3. Define Z-depth
     if 'bead_volume' in config:
-        z_stop = config['bead_volume'][2] * pixel_size / 2
+        z_stop = config.get('maximum_detection_defocus_px', config['bead_volume'][2] / 2) * pixel_size
     else:
         z_stop = 2.0e-6 
     z_depth = np.arange(0, z_stop + pixel_size/1000.0, pixel_size) 

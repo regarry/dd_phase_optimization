@@ -27,6 +27,8 @@ from physics.simulation import TotalVariationLoss
 from physics.phase_io import quantize_phase, save_codes, levels
 from training.checkpoint import read_checkpoint, resume_config, restore_checkpoint, save_checkpoint
 from training.runtime import TrainingRuntime, atomic_json
+from training.seeds import isolated_seed, seed_all
+from training.tissue_loss import TissueAwareProfileLoss, validate_tissue_config
 import yaml
 import copy
 
@@ -77,7 +79,7 @@ def compute_total_loss(outputs, targets, physical_slm_phase, config, loss_funcs,
         elif loss_name == 'tv_loss':
             val = criterion(physical_slm_phase)
             
-        elif loss_name == 'spatial_multi_well_loss':
+        elif loss_name in ['spatial_multi_well_loss','tissue_spatial_loss']:
             val = criterion(column_sums)
             
         else:
@@ -101,7 +103,7 @@ def require_accumulation_steps(config):
         raise ValueError('accumulation_steps must be a positive integer')
     return steps
 
-def train_one_epoch(model, dataloader, optimizer, loss_funcs, mask_param, config, epoch, progress=None):
+def train_one_epoch(model, dataloader, optimizer, loss_funcs, mask_param, config, epoch, progress=None, sample_observer=None):
     """
     Runs one epoch of training using dynamic loss functions.
     loss_funcs: dict of standard PyTorch loss functions, e.g., {'mse': nn.MSELoss(), 'tv_loss': TVLoss()}
@@ -128,7 +130,7 @@ def train_one_epoch(model, dataloader, optimizer, loss_funcs, mask_param, config
             outputs = model(physical_slm_phase, bead_xyz_list)
         
         # 3. LOSS & OPTIMIZATION
-        loss, _ = compute_total_loss(outputs, targets, physical_slm_phase, config, loss_funcs, column_sums if config.get('SpatialMulitWellLoss', False) else None)
+        loss, components = compute_total_loss(outputs, targets, physical_slm_phase, config, loss_funcs, column_sums if config.get('SpatialMulitWellLoss', False) else None)
         
         # Losses are microbatch means. Weight by sample count so a smaller
         # final microbatch does not receive the same weight as a full one.
@@ -138,7 +140,8 @@ def train_one_epoch(model, dataloader, optimizer, loss_funcs, mask_param, config
             progress('train', batch_idx, len(dataloader), loss.item(), mask_param.grad)
         window_samples += batch_samples
 
-        if (batch_idx + 1) % grad_accum == 0 or batch_idx == (len(dataloader) - 1):
+        stepped=(batch_idx + 1) % grad_accum == 0 or batch_idx == (len(dataloader) - 1)
+        if stepped:
             # Normalize before Adam/SGD sees the gradients, including the last
             # partial accumulation window. Apply to model AND phase parameters.
             for group in optimizer.param_groups:
@@ -149,6 +152,8 @@ def train_one_epoch(model, dataloader, optimizer, loss_funcs, mask_param, config
             optimizer.zero_grad(set_to_none=True)
             window_samples = 0
 
+        if sample_observer is not None:
+            sample_observer('train',batch_samples,bead_xyz_list.shape[0]*bead_xyz_list.shape[1],components,stepped)
         total_loss += loss.item() * batch_samples
         total_samples += batch_samples
 
@@ -157,7 +162,7 @@ def train_one_epoch(model, dataloader, optimizer, loss_funcs, mask_param, config
     return total_loss / total_samples
 
 
-def validate_one_epoch(model, dataloader, loss_funcs, mask_param, config, epoch, progress=None):
+def validate_one_epoch(model, dataloader, loss_funcs, mask_param, config, epoch, progress=None, sample_observer=None):
     """
     Runs one epoch of validation using dynamic loss functions.
     """
@@ -179,8 +184,10 @@ def validate_one_epoch(model, dataloader, loss_funcs, mask_param, config, epoch,
                 outputs = model(physical_slm_phase, bead_xyz_list)
             
             # LOSS CALCULATION
-            loss, _ = compute_total_loss(outputs, targets, physical_slm_phase, config, loss_funcs, column_sums if config.get('SpatialMulitWellLoss', False) else None)
+            loss, components = compute_total_loss(outputs, targets, physical_slm_phase, config, loss_funcs, column_sums if config.get('SpatialMulitWellLoss', False) else None)
             total_loss += loss.item()
+            if sample_observer is not None:
+                sample_observer('validation',bead_xyz_list.shape[0],bead_xyz_list.shape[0]*bead_xyz_list.shape[1],components)
             if progress is not None:
                 progress('validation', batch_idx, len(dataloader), loss.item())
 
@@ -368,6 +375,10 @@ def main():
     args = parser.parse_args()
     
     raw_config = load_config(args.config)
+    validate_tissue_config(raw_config)
+    if raw_config.get('tissue_spatial_loss_weight',0)>0 and not any(
+            raw_config.get(k+'_loss_weight',0)>0 for k in ('ce','dice','mae','mse')):
+        raise ValueError('Tissue-aware training requires a nonzero detection loss alongside the optical loss')
     resume = raw_config.get('resume_checkpoint')
     checkpoint = read_checkpoint(resume) if resume else None
     if checkpoint is not None:
@@ -393,6 +404,14 @@ def main():
     makedirs(training_results_dir)
     runtime=TrainingRuntime(training_results_dir,args.progress_every,args.wall_seconds,
                             args.stop_margin_seconds,args.require_phase_gradient,time.monotonic())
+    runtime.restore_progress(checkpoint.get('progress') if checkpoint else None,
+                             checkpoint['epoch']+1 if checkpoint else 0)
+    maximum_training_seconds=float(raw_config.get("maximum_training_seconds", float("inf")))
+    if maximum_training_seconds <= 0 or np.isnan(maximum_training_seconds):
+        raise ValueError("maximum_training_seconds must be positive")
+    minimum_training_seconds=float(raw_config.get('minimum_training_seconds',0))
+    if not np.isfinite(minimum_training_seconds) or minimum_training_seconds<0:
+        raise ValueError('minimum_training_seconds must be finite and nonnegative')
     atomic_json(os.path.join(training_results_dir,'runtime_controls.json'),vars(args))
     
     config = expand_config(copy.deepcopy(raw_config), training_results_dir)
@@ -453,6 +472,8 @@ def main():
         y_target=config.get('spatial_well_y'),
         steepness=config.get('spatial_well_steepness', 1.0)
     )
+    if config.get('tissue_spatial_loss_weight',0)>0:
+        criterion_dict['tissue_spatial_loss'] = TissueAwareProfileLoss(config)
 
 
     # The penalty shape is a fixed YAML hyperparameter, not an optimizer parameter.
@@ -492,7 +513,8 @@ def main():
     if checkpoint is not None:
         val_samples = checkpoint['val_samples']
     else:
-        val_samples = [train_ds[i] for i in range(val_steps_per_epoch)]
+        with isolated_seed(config.get('validation_seed')):
+            val_samples = [train_ds[i] for i in range(val_steps_per_epoch)]
     for i, (xyz, target) in enumerate(val_samples):
         labels_dict[i] = {'xyz': xyz.tolist(), 'target': target.tolist()}
 
@@ -521,17 +543,22 @@ def main():
                     raise RuntimeError('No full epoch fits before the configured stop margin')
                 print('Stopping at verified checkpoint before another epoch would exceed the wall-time margin.',flush=True)
                 break
-            runtime.epoch=epoch
+            runtime.begin_epoch(epoch)
+            if config.get('training_seed') is not None:
+                seed_all(config['training_seed']+epoch)
             cycle_started=time.monotonic()
             loss = train_one_epoch(model, train_loader, optimizer, criterion_dict, 
-                                   mask_param, config, epoch, progress=runtime.progress)
+                                   mask_param, config, epoch, progress=runtime.progress, sample_observer=runtime.observe_batch)
             train_ended=time.monotonic()
             train_losses.append(loss)
-            val_loss = validate_one_epoch(model, val_loader, criterion_dict, mask_param, config, epoch, progress=runtime.progress)
+            val_loss = validate_one_epoch(model, val_loader, criterion_dict, mask_param, config, epoch, progress=runtime.progress, sample_observer=runtime.observe_batch)
             validation_ended=time.monotonic()
             val_losses.append(val_loss)
             scheduler.step(val_loss)
+            next_progress=runtime.completed_progress(train_ended-cycle_started,validation_ended-train_ended)
             early_stopper(val_loss)
+            if next_progress['train_seconds']<minimum_training_seconds:
+                early_stopper.early_stop=False
             current_lr = optimizer.param_groups[0]['lr']
             print(f"🟢 Epoch {epoch+1} Loss: {loss:.4f}| Val Loss: {val_loss:.4f}| LR: {current_lr:.2e}")
             if epoch == 0:
@@ -564,7 +591,7 @@ def main():
             # Always write a complete latest checkpoint after a finished epoch.
             save_checkpoint(os.path.join(training_results_dir, 'checkpoints', 'latest.pt'),
                             model, mask_param, optimizer, scheduler, early_stopper, epoch,
-                            raw_config, config, train_losses, val_losses, val_samples)
+                            raw_config, config, train_losses, val_losses, val_samples,progress=next_progress)
 
             if epoch % config.get('save_epoch_interval', 5) == 0 or epoch == config['max_epochs'] - 1 or early_stopper.early_stop:
                 epoch_model_path = os.path.join(training_results_dir, "models", f'net_{epoch}.pt')
@@ -580,6 +607,9 @@ def main():
                                  loss,val_loss,checkpoint_path)
             del verified
                 
+            if runtime.totals["train_seconds"] >= maximum_training_seconds:
+                print("Requested actual training-time budget reached at a verified epoch boundary.", flush=True)
+                break
             if early_stopper.early_stop:
                 print(f"Early stopping triggered at epoch {epoch+1}. No improvement in validation loss for {early_stopper.patience} epochs.")
                 break

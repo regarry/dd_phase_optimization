@@ -23,7 +23,7 @@ def resume_config(requested, checkpoint):
     return {**original, **{k:v for k,v in requested.items() if k in RESUME_CONTROLS}}
 
 def save_checkpoint(path, model, phase, optimizer, scheduler, stopper, epoch,
-                    raw_config, config, train_losses, val_losses, val_samples):
+                    raw_config, config, train_losses, val_losses, val_samples,progress=None):
     state = dict(format_version=2, model=model.state_dict(), raw_phase=phase.detach().cpu(),
                  optimizer=optimizer.state_dict(), scheduler=scheduler.state_dict(),
                  early_stopping=vars(stopper).copy(), epoch=epoch, raw_config=raw_config,
@@ -31,6 +31,7 @@ def save_checkpoint(path, model, phase, optimizer, scheduler, stopper, epoch,
                  val_samples=val_samples, python_rng=random.getstate(),
                  numpy_rng=np.random.get_state(), torch_rng=torch.get_rng_state(),
                  cuda_rng=torch.cuda.get_rng_state_all() if torch.cuda.is_available() else [])
+    if progress is not None:state['progress']=dict(progress)
     path = Path(path); path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + '.tmp')
     torch.save(state, temporary)

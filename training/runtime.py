@@ -31,6 +31,45 @@ class TrainingRuntime:
         self.gradient_checked=False
         path=self.directory/'epoch_timings.json'
         self.timings=json.loads(path.read_text()) if path.exists() else []
+        self.totals={key:0 for key in ('train_seconds','validation_seconds','checkpoint_seconds',
+            'train_scenes','validation_scenes','train_emitter_exposures',
+            'validation_emitter_exposures','optimizer_updates','train_batches','validation_batches')}
+        self.epoch_counts={key:0 for key in self.totals if not key.endswith('_seconds')}
+        self.components={}
+
+    def restore_progress(self,progress,completed_epochs=0):
+        if progress:
+            self.totals.update({k:progress[k] for k in self.totals if k in progress})
+        else:
+            # Historical measurements recover time only; never invent scene counts.
+            for item in self.timings:
+                if item['epoch']<=completed_epochs:
+                    for key in ('train_seconds','validation_seconds','checkpoint_seconds'):
+                        self.totals[key]+=item[key]
+
+    def begin_epoch(self,epoch):
+        self.epoch=epoch
+        self.epoch_counts={key:0 for key in self.epoch_counts}
+        self.components={}
+
+    def observe_batch(self,stage,samples,emitters,components,optimizer_step=False):
+        self.epoch_counts[stage+'_scenes']+=int(samples)
+        self.epoch_counts[stage+'_emitter_exposures']+=int(emitters)
+        self.epoch_counts[stage+'_batches']+=1
+        if optimizer_step:self.epoch_counts['optimizer_updates']+=1
+        for name,value in components.items():
+            value=float(value.detach()) if torch.is_tensor(value) else float(value)
+            if not math.isfinite(value):raise RuntimeError('Nonfinite loss component '+name)
+            key=stage+'/'+name
+            self.components[key]=self.components.get(key,0)+value*samples
+
+    def completed_progress(self,train_seconds,validation_seconds,checkpoint_seconds=0):
+        progress=dict(self.totals)
+        for key,value in self.epoch_counts.items():progress[key]+=value
+        for key,value in [('train_seconds',train_seconds),('validation_seconds',validation_seconds),
+                          ('checkpoint_seconds',checkpoint_seconds)]:progress[key]+=value
+        progress['completed_epochs']=self.epoch+1
+        return progress
 
     def can_start_epoch(self):
         if self.wall_seconds is None:return True
@@ -65,6 +104,11 @@ class TrainingRuntime:
                     train_loss=loss,validation_loss=val_loss,checkpoint=str(checkpoint),
                     peak_allocated_bytes=[torch.cuda.max_memory_allocated(i) for i in range(torch.cuda.device_count())])
         self.timings.append(record)
+        self.totals=self.completed_progress(train_seconds,validation_seconds,checkpoint_seconds)
+        record['progress']=dict(self.totals)
+        record['weighted_loss_components']={key:value/max(1,self.epoch_counts[key.split('/')[0]+'_scenes'])
+                                            for key,value in self.components.items()}
         atomic_json(self.directory/'epoch_timings.json',self.timings)
         atomic_json(self.directory/'last_checkpoint.json',record)
+        atomic_json(self.directory/'progress.json',self.totals)
         print('CHECKPOINT_VERIFIED '+json.dumps(record),flush=True)

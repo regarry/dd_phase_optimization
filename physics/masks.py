@@ -9,6 +9,32 @@ from .bessel import generate_axicon_phase_mask
 from data.io import load_tiff # Reuse your robust IO
 
 
+def focused_airy_phase_parameters(size,pitch,k,f,alpha,angle,renderer_pixel):
+    """Return unwrapped radians and maximum analytic phase step in rad/pixel.
+
+    Coordinates are metres: rows y (scan), columns z (sheet thickness).
+    Rotation is applied to cubic-phase coordinates, not to an exported bitmap.
+    The carrier aligns the ideal Airy main lobe to the renderer's N//2-1 origin.
+    """
+    values=np.asarray([pitch,k,f,alpha,angle,renderer_pixel],dtype=float)
+    if not np.isfinite(values).all() or min(pitch,k,f,alpha,renderer_pixel)<=0:
+        raise ValueError('Focused Airy requires finite positive scales/alpha and a finite angle')
+    if isinstance(size,bool) or not isinstance(size,(int,np.integer)) or size<=0:
+        raise ValueError('Focused Airy mask size must be a positive integer')
+    coordinate=(np.arange(size)-size//2)*pitch
+    y,z=np.meshgrid(coordinate,coordinate,indexing='ij')
+    theta=np.deg2rad(angle);c=np.cos(theta);s=np.sin(theta)
+    a=c*y+s*z;b=-s*y+c*z
+    scale=f*(3*alpha)**(1/3)/k
+    dy=1.018792971647471*scale*(c-s)-renderer_pixel
+    dz=1.018792971647471*scale*(s+c)-renderer_pixel
+    phase=-k*(y*y+z*z)/(2*f)-alpha*(a**3+b**3)+k*(dy*y+dz*z)/f
+    gy=-k*y/f-3*alpha*(c*a*a-s*b*b)+k*dy/f
+    gz=-k*z/f-3*alpha*(s*a*a+c*b*b)+k*dz/f
+    step=float(max(np.max(abs(gy)),np.max(abs(gz)))*pitch)
+    return phase.astype(np.float32),step
+
+
 def get_initial_phase_mask(config):
     """
     Factory function to generate the initial phase mask based on config.
@@ -77,6 +103,26 @@ def get_initial_phase_mask(config):
 
     # 4. Airy Beam (Cubic Phase Mask)
     elif mode in ["air", "airy"]:
+        airy_mode=config.get('airy_phase_mode','cubic_only')
+        if airy_mode=='focused':
+            if config.get('lens_approach')!='sample_4f' or config.get('phase_mask_upsample_factor',1)!=1:
+                raise ValueError('Focused Airy supports the reviewed sample_4f route with upsample factor1')
+            if 'airy_alpha' not in config:
+                raise ValueError('Focused Airy requires explicit airy_alpha in rad/m^3')
+            focal=float(config['fresnel_lens_focal_length'])
+            propagation=float(config['lensless_prop_distance'])
+            if not np.isfinite(focal) or focal<=0 or not np.isclose(focal,propagation,rtol=1e-7,atol=0):
+                raise ValueError('Focused Airy focal length must match the positive sample_4f propagation distance')
+            k=2*np.pi*float(config['refractive_index'])/float(wavelength)
+            phase,step=focused_airy_phase_parameters(size,slm_px,k,focal,float(config['airy_alpha']),
+                        float(config.get('airy_rotation_degrees',0)),float(config.get('px',slm_px)))
+            if step>=np.pi:
+                raise ValueError('Focused Airy phase exceeds the conservative pi-radian-per-pixel sampling limit')
+            print('Initializing focused Airy; alpha=%g rad/m^3, rotation=%g degrees, max step=%g rad/pixel'%
+                  (float(config['airy_alpha']),float(config.get('airy_rotation_degrees',0)),step))
+            return phase
+        if airy_mode!='cubic_only':
+            raise ValueError('airy_phase_mode must be cubic_only or focused')
         print("Initializing with Airy (Cubic) Phase Mask...")
         # Generates an Airy beam using a 2D cubic phase profile: alpha * (x^3 + y^3)
         x = np.linspace(-size//2, size//2 - 1, size) * slm_px  # in m
@@ -93,6 +139,16 @@ def get_initial_phase_mask(config):
     # Gaussian illumination: the simulator supplies the incident Gaussian
     # amplitude; zero phase leaves that beam unmodulated.
     elif mode == "gaussian":
+        phase_mode = config.get('gaussian_phase_mode', 'flat')
+        if phase_mode == 'focused':
+            focal = float(config['fresnel_lens_focal_length'])
+            if not np.isfinite(focal) or focal <= 0:
+                raise ValueError('Focused Gaussian requires a positive configured focal length')
+            # Explicit quadratic lens applied to the existing Gaussian amplitude.
+            # The historical flat option remains unchanged for old checkpoints.
+            return get_initial_phase_mask(dict(config, initial_phase_mask='lens'))
+        if phase_mode != 'flat':
+            raise ValueError('gaussian_phase_mode must be flat or focused')
         print("Initializing Gaussian illumination (zero phase modulation)...")
         return np.zeros((size, size), dtype=np.float32)
 

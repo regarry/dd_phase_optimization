@@ -55,3 +55,25 @@ pytorch (>= 1.12), torchvision, matplotlib, numpy, random, skimage, scipy
 See [portability](docs/portability.md), the [architecture map](docs/architecture.md),
 [bounded pilot](docs/bounded-pilot.md), and [checkpoint evaluation](docs/checkpoint-evaluation.md).
 The historical entry-point list above predates the current package structure.
+
+## Tissue objectives, phase transfer and multi-view detection
+
+Use the configured environment in `requirements.txt`, then run
+`python -m pytest -q tests`. Scientific GPU execution requires a suitable allocation;
+see [portability](docs/portability.md) for site environment variables.
+
+Example scientific configs are `configs/tissue_study.example.yaml`,
+`configs/phase_transfer.example.yaml` and `configs/between_three_view.example.yaml`.
+They retain explicit seeds, geometry, losses, noise and exposure settings. To use
+a learned phase, generate the source study locally or transfer its trusted
+checkpoint separately, then use the phase-transfer preparer described in
+[phase-transfer](docs/phase-transfer.md). No trained phases or data are distributed
+with this source-only checkout. Set your own Slurm account/partition/QoS and GPU
+request. The generic single-run launcher accepts `DD_SLURM_*` variables.
+
+Bounded full-density CUDA validation:
+`python -m scripts.transfer_smoke --config configs/phase_transfer.example.yaml --output training_results/smoke`.
+Run this inside a GPU allocation, not on a shared login node.
+See [segmented training](docs/segmented-training.md) for complete-state continuation
+and frozen full-model bundles, and [optical evaluation](docs/optical-evaluation.md)
+for inference and beam/performance reporting contracts.

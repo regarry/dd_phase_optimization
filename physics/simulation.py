@@ -373,6 +373,18 @@ def apply_8bit_physics(raw_phase, max_stroke=2*np.pi):
         raise ValueError('Only a full 2pi phase period is supported')
     return quantize_phase(raw_phase, 8)
 
+def interpolate_defocus_psf(stack, defocus_px):
+    """Linear intensity-PSF interpolation; integer offsets retain exact lookup."""
+    distance = float(defocus_px)
+    if not math.isfinite(distance) or distance < 0 or distance > len(stack) - 1:
+        raise ValueError('Detection defocus lies outside the generated PSF stack')
+    lower = int(math.floor(distance))
+    fraction = distance - lower
+    if fraction == 0:
+        return stack[lower]
+    return stack[lower] * (1 - fraction) + stack[lower + 1] * fraction
+
+
 class OpticsSimulation(nn.Module):
     def __init__(self, config, device):
         super(OpticsSimulation, self).__init__()
@@ -1438,38 +1450,26 @@ class OpticsSimulation(nn.Module):
         # find all of the unique x values and compute intensity where x = xyz[i, j, 0].type(torch.LongTensor) - self.image_volume_size_px[0]//2 
         # x = xyz[i, j, 0].type(torch.LongTensor) - self.image_volume_size_px[0]//2
         
-        for l in range(self.Nimgs):
-            for i in range(Nbatch):
-                for j in range(Nemitters): # split this into two models
-                    # change x value to fit different field of view
-                    x = xyz[i, j, 0].type(torch.LongTensor) - self.image_volume_size_px[1]//2
-                    y = xyz[i, j, 1].type(torch.LongTensor)
-                    z = xyz[i, j, 2].type(torch.LongTensor)
-
-                    x_ori = xyz[i, j, 0].type(torch.LongTensor)
-                    U1 = self.angular_spectrum_propagation(output_layer, x, pad = True, debug = False) # angular spectrum propagation
-                    U1_intensity = torch.real(U1 * torch.conj(U1)) # intensity of the propagated field
-                    #U1 = self.fresnel_propagation(output_layer, x) # fresnel propagation
-                    # Here we assume that the beam is being dithered up and down
-                    # change this to only dither 2*x centered where x is the max dither amount
-                    # or the height of the FOV
-                    #ycenter_u1_intensity = U1_intensity.shape[2] // 2
-                    #intensity = torch.sum(U1_intensity[0, 0, ycenter_u1_intensity - self.image_volume_size_px[1]:ycenter_u1_intensity + self.image_volume_size_px[1], int((self.N//2-1) + z)]) 
-                    intensity = torch.sum(U1_intensity[0, 0, :, int((self.N//2-1) + z)]) 
-
-                    photons = intensity * self.illumination_scaling_factor
-                    if False:
-                        print("photons: ", torch.max(photons))
-                        print("max intensity: ", torch.max(intensity))
-                        print("max defocus bead: ", self.gpu_defocused_beads[abs(z.item()-self.z_depth_list[l])].max())
-                        print("sum defocus bead: ", torch.sum(self.gpu_defocused_beads[abs(z.item()-self.z_depth_list[l])]))
-                        
-                    if self.conv3d == False:
-                        imgs3D[i, l, y - self.psf_keep_radius: y + self.psf_keep_radius + 1, x_ori - self.psf_keep_radius:x_ori + self.psf_keep_radius + 1] += \
-                            self.gpu_defocused_beads[abs(z.item()-self.z_depth_list[l])] * photons
-                    
-                    elif self.conv3d == True and self.Nimgs > 1:
-                        imgs3D[i, 0, l, x_ori - self.psf_keep_radius:x_ori + self.psf_keep_radius + 1, y - self.psf_keep_radius: y + self.psf_keep_radius + 1] += \
-                            self.gpu_defocused_beads[abs(z.item()-self.z_depth_list[l])] * photons
-        
+        if xyz.shape[-1] not in (3, 4):
+            raise ValueError('Emitter rows must be [x,y,z] or [x,y,z,relative_strength]')
+        if xyz.shape[-1] == 4 and (not torch.isfinite(xyz[..., 3]).all() or (xyz[..., 3] < 0).any()):
+            raise ValueError('Emitter strengths must be finite and nonnegative')
+        # One illumination calculation per emitter, shared by all detection planes.
+        # The sample and beam remain fixed; only detection defocus changes.
+        for i in range(Nbatch):
+            for j in range(Nemitters):
+                x_ori, y, z = [int(v.item()) for v in xyz[i, j, :3]]
+                x = x_ori - self.image_volume_size_px[1] // 2
+                U1 = self.angular_spectrum_propagation(output_layer, x, pad=True, debug=False)
+                intensity = (U1 * U1.conj()).real[0, 0, :, self.N // 2 - 1 + z].sum()
+                strength = xyz[i, j, 3] if xyz.shape[-1] == 4 else 1.
+                photons = intensity * self.illumination_scaling_factor * strength
+                for l, focal_offset in enumerate(self.z_depth_list):
+                    psf = interpolate_defocus_psf(self.gpu_defocused_beads, abs(z - focal_offset))
+                    if not self.conv3d:
+                        imgs3D[i, l, y-self.psf_keep_radius:y+self.psf_keep_radius+1,
+                               x_ori-self.psf_keep_radius:x_ori+self.psf_keep_radius+1] += psf * photons
+                    else:
+                        imgs3D[i, 0, l, x_ori-self.psf_keep_radius:x_ori+self.psf_keep_radius+1,
+                               y-self.psf_keep_radius:y+self.psf_keep_radius+1] += psf * photons
         return imgs3D

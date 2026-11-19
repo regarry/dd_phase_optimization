@@ -4,6 +4,7 @@ from torch.utils.data import Dataset
 import scipy.io as sio
 import os
 from .generators import create_random_emitters
+from .emission import attach_emission_strength
 from .transforms import batch_xyz_to_boolean_grid, batch_xyz_to_3_class_grid, batch_xyz_to_ideal_image
 
 class SyntheticMicroscopeData(Dataset):
@@ -40,7 +41,7 @@ class SyntheticMicroscopeData(Dataset):
         target = target.squeeze(0)
         
         # Convert inputs to float tensor
-        xyz_tensor = torch.from_numpy(bead_xyz_list).float()
+        xyz_tensor = torch.from_numpy(attach_emission_strength(bead_xyz_list, self.config)).float()
         
         return xyz_tensor, target
     

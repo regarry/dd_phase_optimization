@@ -84,3 +84,28 @@ See [portability.md](portability.md) for environment and scheduler setup,
 The CPU regression command is `python -m pytest -q tests`. Full optical execution
 requires a validated GPU allocation; the incomplete CPU simulation fallback does
 not make the full driver a supported CPU workload.
+
+## Joint optical objectives and continuation
+
+Tissue-aware losses and streamed differentiable profiles are in
+`training/tissue_loss.py` and `physics/wrappers.py`; see
+[tissue-aware-objective.md](tissue-aware-objective.md). Complete v2 checkpoints,
+seed isolation, cumulative work counters, bounded continuation and frozen full
+model bundles are implemented by `training/checkpoint.py`, `training/seeds.py`,
+`training/runtime.py`, `training/segments.py` and `training/model_archive.py`.
+See [segmented-training.md](segmented-training.md).
+
+`data/emission.py` optionally extends emitter rows from xyz to xyz+relative
+brightness without changing target construction. The default [1,1] leaves RNG
+and legacy scenes unchanged. `physics/simulation.py` shares illumination across
+focal views and interpolates fractional detection PSFs. `data/io.py` and
+`data/psf_gen.py` include all focal offsets in PSF support.
+[phase-transfer.md](phase-transfer.md) documents units, camera auto-exposure,
+phase-only transfer and measured training-time caps.
+
+`physics/masks.py` adds an opt-in focused/rotated Airy initializer with explicit
+alpha and sampling guards. `utils/beam_metrics.py` and the optical reporting
+scripts produce linear-scale beam comparisons, phase maps, camera inputs,
+confusion matrices and power/width metrics; see
+[optical-evaluation.md](optical-evaluation.md). These source tools do not include
+trained weights, datasets or experiment outputs.

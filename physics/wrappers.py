@@ -3,6 +3,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from physics.simulation import OpticsSimulation
+from training.tissue_loss import tissue_profiles
 
 
 class MultiGpuSimulation(nn.Module):
@@ -17,6 +18,7 @@ class MultiGpuSimulation(nn.Module):
         self.replicas = nn.ModuleList()
         self.camera_max_adu = torch.tensor(config['camera_max_adu'], dtype=torch.float32)
         self.debug = False
+        self._tissue_reference_profile = None
         # CASE A: Multi-GPU or Single-GPU
         if self.num_gpus > 0:
             print(f"⚡ Initializing Physics Engine across {self.num_gpus} GPUs...")
@@ -80,6 +82,11 @@ class MultiGpuSimulation(nn.Module):
             print("final_image max after noise and norm: ", torch.max(final_image))
             
         if self.config.get('SpatialMulitWellLoss', False):
+            if self.config.get('tissue_spatial_loss_weight',0)>0:
+                profile=tissue_profiles(self.replicas[0],mask_param,self.config,
+                                        self._tissue_reference_profile)
+                self._tissue_reference_profile=profile['reference_intensity']
+                return final_image,profile
             lens_approach = self.config['lens_approach']
             phase_mask_upsample_factor = self.config.get('phase_mask_upsample_factor', 1)
             # Get z_min, z_max, y_min, y_max, and num_z_steps from config

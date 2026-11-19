@@ -63,6 +63,17 @@ def load_phase_config(path, config):
         return load_phase(path)
     return load_phase(path, config.get('phase_mask_input_units'), config.get('slm_bit_depth', 8))
 
+def save_radians(phase, path):
+    """Persist internal float32 radians with explicit unit metadata (no drive mapping)."""
+    phase = np.asarray(phase, dtype=np.float32)
+    path = Path(path)
+    if path.suffix.lower() not in {'.tif', '.tiff'} or phase.ndim != 2 or not np.isfinite(phase).all():
+        raise ValueError('Internal phase requires finite 2D radians in a float TIFF')
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Image.fromarray(phase).save(path)
+    Path(str(path) + '.json').write_text(json.dumps({'units':'radians', 'storage':'float32', 'phase_period_rad':TAU}, indent=2))
+
+
 def save_codes(phase, path, bits=8):
     path = Path(path)
     if path.suffix.lower() not in {'.bmp', '.tif', '.tiff', '.png'}:

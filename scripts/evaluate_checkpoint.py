@@ -46,7 +46,7 @@ def detection_counts(probability,target,threshold=.5,radius=2):
                 target_points=len(truth),predicted_components=n)
 
 
-def capture(checkpoint,output,count,seed=1729):
+def capture(checkpoint,output,count):
     import torch
     from data.datasets import SyntheticMicroscopeData
     from models.wrappers import ParallelEndToEndModel
@@ -62,12 +62,12 @@ def capture(checkpoint,output,count,seed=1729):
     if cfg['lens_approach']!='sample_4f' or cfg.get('phase_mask_upsample_factor',1)!=1:
         raise ValueError('Profile capture requires the reviewed sample_4f path with phase upsample 1')
     if count>len(state['val_samples']):raise ValueError('Not enough cached validation scenes')
-    random.seed(seed);np.random.seed(seed);torch.manual_seed(seed)
+    random.seed(20261111);np.random.seed(20261111);torch.manual_seed(20261111)
     torch.set_num_threads(4)
     model=ParallelEndToEndModel(cfg).eval();model.load_state_dict(state['model'],strict=True)
     phase=quantize_phase(state['raw_phase'].to('cuda:0'),cfg.get('slm_bit_depth',8))
     # Reset scene RNG after construction, keeping scientific generator/settings.
-    random.seed(seed);np.random.seed(seed)
+    random.seed(20261111);np.random.seed(20261111)
     dataset=SyntheticMicroscopeData(count,cfg)
     fresh=[dataset[i] for i in range(count)]
     cases=[('fresh',i,*v) for i,v in enumerate(fresh)]
@@ -75,10 +75,11 @@ def capture(checkpoint,output,count,seed=1729):
     case_meta=[]
     with torch.no_grad():
         for group,i,xyz,target in cases:
-            xyz=torch.as_tensor(xyz).float().reshape(-1,3)
+            xyz=torch.as_tensor(xyz).float()
+            if xyz.ndim != 2 or xyz.shape[1] not in (3,4):raise ValueError("Invalid emitter scene shape")
             target=np.asarray(target).squeeze()
             if not np.all(np.isin(target,[0,1])):raise ValueError('Expected binary point targets')
-            noise_seed=seed+100000+i+(1000 if group=='saved_validation' else 0)
+            noise_seed=90261111+i+(1000 if group=='saved_validation' else 0)
             torch.manual_seed(noise_seed);torch.cuda.manual_seed_all(noise_seed)
             camera=model.physics(phase,xyz[None].to('cuda:0'))
             logits=model.unet(camera)
@@ -112,7 +113,7 @@ def capture(checkpoint,output,count,seed=1729):
         checkpoint_sha256=hashlib.sha256(checkpoint.read_bytes()).hexdigest(),
         checkpoint_epoch_index=state['epoch'],completed_epochs=state['epoch']+1,
         configuration=cfg,raw_config=state['raw_config'],cases=case_meta,
-        scene_seed=seed,threshold=.5,object_tolerance_pixels=2,
+        scene_seed=20261111,threshold=.5,object_tolerance_pixels=2,
         python=sys.version,torch=torch.__version__,cuda=torch.version.cuda,
         gpu_names=[torch.cuda.get_device_name(i) for i in range(2)],
         visible_devices=os.environ.get('CUDA_VISIBLE_DEVICES'),job_id=os.environ['SLURM_JOB_ID'],
@@ -197,7 +198,7 @@ def render(output):
            '|---|---:|---:|---:|---:|---:|']
     def fmt(v):return 'undefined' if v is None else '%.4f'%v
     for name,s in summary.items():lines.append('| %s | %d | %s | %s | %s | %s |'%(name,s['scenes'],fmt(s['pixel']['precision']),fmt(s['pixel']['recall']),fmt(s['pixel']['f1']),fmt(s['object_2d']['f1'])))
-    lines+=['','Fresh scenes use the recorded scene seed and the unchanged scientific generator. Saved-validation scenes are reused training-time validation examples. Fresh-scene performance is synthetic same-distribution testing, not real-cell or instrument validation. The noise seed is recorded per case. Threshold 0.5 is fixed in advance; the threshold sweep is exploratory and does not select a replacement operating point. Point matching uses unique projected in-focus centers, not independently depth-resolved beads.','',
+    lines+=['','Fresh scenes use seed 20261111 and the unchanged scientific generator. Saved-validation scenes are reused training-time validation examples. Fresh-scene performance is synthetic same-distribution testing, not real-cell or instrument validation. The noise seed is recorded per case. Threshold 0.5 is fixed in advance; the threshold sweep is exploratory and does not select a replacement operating point. Point matching uses unique projected in-focus centers, not independently depth-resolved beads.','',
        'Camera images are the exact tensors passed to the detector, converted back to ADU. Display contrast is explicitly stretched; raw arrays are in the case NPZ files. Camera auto-exposure remains enabled (target saturation ratio 0.01, robust percentile 0.999). The model is a bead detector; no cell annotations are available. The PSF-safe y range is only six central rows in these settings.','',
        'Beam profiles follow the trained sample_4f route and pad=True propagation. Raw scan-integrated intensities and physical axes are in beam_profiles.npz. The z=0 index follows the renderer at N//2−1. The flat reference uses the same optical model/input amplitude with zero phase, without running an untrained reference detector. Independently peak-normalized display does not compare absolute incident power or establish fixed-dose benefits.','']
     for name in ['fresh_case0','saved_validation_case0','confusion_matrices','precision_recall','beam_profiles','loss_history']:lines+=['![%s](%s.png)'%(name,name),'']
@@ -210,8 +211,8 @@ def render(output):
 
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser(__doc__);p.add_argument('mode',choices=['capture','render','all']);p.add_argument('--checkpoint',type=Path);p.add_argument('--output',type=Path,required=True);p.add_argument('--count',type=int,default=16);p.add_argument('--seed',type=int,default=1729);a=p.parse_args()
+    p=argparse.ArgumentParser(__doc__);p.add_argument('mode',choices=['capture','render','all']);p.add_argument('--checkpoint',type=Path);p.add_argument('--output',type=Path,required=True);p.add_argument('--count',type=int,default=16);a=p.parse_args()
     if a.mode in ['capture','all']:
         if a.checkpoint is None:p.error('--checkpoint required for capture')
-        capture(a.checkpoint,a.output,a.count,a.seed)
+        capture(a.checkpoint,a.output,a.count)
     if a.mode in ['render','all']:render(a.output)
