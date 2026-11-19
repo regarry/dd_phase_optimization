@@ -19,6 +19,7 @@ def terminal_reason(state):
     minimum=float(state['raw_config'].get('minimum_training_seconds',0))
     seconds=float(state.get('progress',{}).get('train_seconds',0))
     maximum=float(state['raw_config'].get('maximum_training_seconds',float('inf')))
+    if maximum<minimum:raise ValueError('Maximum training budget is below the required minimum')
     if seconds>=maximum:return 'training_budget_reached'
     if state['early_stopping']['early_stop']:
         if seconds<minimum:raise RuntimeError('Checkpoint early-stopped before its minimum training budget')

@@ -410,6 +410,8 @@ def main():
     if maximum_training_seconds <= 0 or np.isnan(maximum_training_seconds):
         raise ValueError("maximum_training_seconds must be positive")
     minimum_training_seconds=float(raw_config.get('minimum_training_seconds',0))
+    if maximum_training_seconds < minimum_training_seconds:
+        raise ValueError('maximum_training_seconds cannot be less than minimum_training_seconds')
     if not np.isfinite(minimum_training_seconds) or minimum_training_seconds<0:
         raise ValueError('minimum_training_seconds must be finite and nonnegative')
     atomic_json(os.path.join(training_results_dir,'runtime_controls.json'),vars(args))

@@ -68,3 +68,9 @@ def test_float_phase_transfer_roundtrip_preserves_unwrapped_radians(tmp_path):
     phase=np.array([[-9,0],[3,12]],dtype=np.float32)
     path=tmp_path/'phase.tif';save_radians(phase,path)
     np.testing.assert_array_equal(load_phase(path),phase)
+
+
+def test_inconsistent_training_time_bounds_are_rejected():
+    state=dict(raw_config=dict(max_epochs=100,minimum_training_seconds=10,maximum_training_seconds=9),
+               progress=dict(train_seconds=9.2),early_stopping=dict(early_stop=False),epoch=2)
+    with pytest.raises(ValueError,match='below'):terminal_reason(state)
