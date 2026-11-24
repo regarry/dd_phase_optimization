@@ -385,6 +385,8 @@ def main():
         raw_config = resume_config(raw_config, checkpoint)
     
     require_accumulation_steps(raw_config)
+    if raw_config.get('freeze_slm', False) and args.require_phase_gradient:
+        raise ValueError('--require-phase-gradient requires a trainable phase; freeze_slm is true')
     levels(raw_config.get('slm_bit_depth', 8))
     if not any(raw_config.get(k + '_weight', 0) > 0 for k in
                ('ce_loss', 'dice_loss', 'mae_loss', 'mse_loss', 'tv_loss', 'spatial_multi_well_loss')):
@@ -444,7 +446,9 @@ def main():
     # save initial mask as a png scaled between 0-255
     if checkpoint is None:
         save_normalized_png(initial_mask, os.path.join(training_results_dir, 'initial_phase_mask.png'))
-    mask_param = nn.Parameter(torch.from_numpy(initial_mask).float().to(main_device))
+    mask_param = nn.Parameter(torch.from_numpy(initial_mask).float().to(main_device),
+                              requires_grad=not config.get('freeze_slm', False))
+    frozen_phase = mask_param.detach().cpu().clone() if config.get('freeze_slm', False) else None
     
     # Loss setup
     criterion_dict = {}
@@ -602,6 +606,8 @@ def main():
 
             checkpoint_path=os.path.join(training_results_dir,'checkpoints','latest.pt')
             verified=read_checkpoint(checkpoint_path)
+            if frozen_phase is not None and not torch.equal(verified['raw_phase'], frozen_phase):
+                raise RuntimeError('Frozen raw phase changed; refusing to continue')
             if verified['epoch']!=epoch or len(verified['train_losses'])!=len(train_losses):
                 raise RuntimeError('Checkpoint epoch/history read-back verification failed')
             runtime.record_epoch(epoch,train_ended-cycle_started,validation_ended-train_ended,

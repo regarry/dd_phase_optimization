@@ -9,8 +9,11 @@ def number(value):return 'unavailable' if value is None else '%.3g'%value
 
 
 def expected_camera(ideal,cfg):
-    robust=float(np.quantile(ideal,cfg['robust_max_percentile']))
-    scale=(cfg['camera_max_adu']/cfg['camera_gain'])*cfg['target_saturation_ratio']/(robust+cfg['epsilon'])
+    from physics.exposure import exposure_settings
+    mode,scale=exposure_settings(cfg)
+    if mode=='auto_percentile':
+        robust=float(np.quantile(ideal,cfg['robust_max_percentile']))
+        scale=(cfg['camera_max_adu']/cfg['camera_gain'])*cfg['target_saturation_ratio']/(robust+cfg['epsilon'])
     electrons=np.maximum(ideal*scale*cfg['quantum_efficiency']+cfg['dark_current_mean'],cfg['min_clip_value'])
     return electrons*cfg['camera_gain'],np.sqrt(electrons+cfg['read_noise_std']**2)*cfg['camera_gain'],scale
 

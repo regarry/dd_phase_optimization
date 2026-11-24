@@ -67,9 +67,10 @@ def test_optional_validation_seed_is_repeatable_without_disturbing_training_rng(
     torch.testing.assert_close(torch.get_rng_state(),before[2])
 
 
-def test_segment_chain_advances_then_noops_after_convergence(tmp_path,monkeypatch):
+@pytest.mark.parametrize('freeze_slm',[False,True])
+def test_segment_chain_advances_then_noops_after_convergence(tmp_path,monkeypatch,freeze_slm):
     import yaml
-    raw=dict(max_epochs=100,minimum_training_seconds=1,resume_checkpoint=None)
+    raw=dict(max_epochs=100,minimum_training_seconds=1,resume_checkpoint=None,freeze_slm=freeze_slm)
     (tmp_path/'input.yaml').write_text(yaml.safe_dump(raw))
     (tmp_path/'segment_plan.json').write_text(json.dumps(dict(segment_limit=3,
         config_sha256=sha256(tmp_path/'input.yaml'),expected_gpu_count=2,source_snapshot=str(tmp_path))))
@@ -93,6 +94,7 @@ def test_segment_chain_advances_then_noops_after_convergence(tmp_path,monkeypatc
     assert one['checkpoint_epoch_index']==0 and two['checkpoint_epoch_index']==1
     assert two['terminal_reason']=='converged' and three['no_op']
     assert len(calls)==2
+    assert all(('--require-phase-gradient' in args[0]) is not freeze_slm for args in calls)
 
 
 def test_model_bundle_preserves_source_state_and_standalone_detector(tmp_path):
@@ -144,13 +146,15 @@ def test_preempted_job_resumes_own_checkpoint_and_never_restarts(tmp_path,monkey
         if n==1:raise RuntimeError('simulated preemption after saved epoch')
     monkeypatch.setattr(segments.subprocess,'run',child)
     with pytest.raises(RuntimeError,match='preemption'):segments.run_segment(tmp_path,1,1,20,1)
+    monkeypatch.setenv('SLURM_RESTART_COUNT','4')
+    with pytest.raises(RuntimeError,match='restart limit'):segments.run_segment(tmp_path,1,1,20,1)
     monkeypatch.setenv('SLURM_RESTART_COUNT','1')
     result=segments.run_segment(tmp_path,1,1,20,1)
     assert result['checkpoint_epoch_index']==1 and result['terminal_reason']=='training_budget_reached'
     assert calls[0]['resume_checkpoint'] is None
     assert calls[1]['resume_checkpoint']==str(tmp_path/'checkpoints/latest.pt')
     # A late scheduler requeue after the completed receipt is an idempotent no-op.
-    monkeypatch.setenv('SLURM_RESTART_COUNT','2')
+    monkeypatch.setenv('SLURM_RESTART_COUNT','4')
     assert segments.run_segment(tmp_path,1,1,20,1)['success'] and len(calls)==2
     monkeypatch.setenv('SLURM_JOB_ID','222')
     with pytest.raises(RuntimeError,match='proof mismatch'):segments.run_segment(tmp_path,1,1,20,1)

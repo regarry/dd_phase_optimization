@@ -71,8 +71,6 @@ def run_segment(run,index,limit,wall_seconds=6900,margin=900):
     lease_path=run/'segments'/('%03d.started.json'%index)
     restart_count=int(os.environ.get('SLURM_RESTART_COUNT','0'))
     if restart_count:
-        if restart_count>int(plan.get('maximum_preemptions',3)):
-            raise RuntimeError('Bounded preemption restart limit exceeded')
         if not lease_path.is_file():raise RuntimeError('Requeued job has no original execution proof')
         lease=json.loads(lease_path.read_text())
         if lease['job_id']!=os.environ['SLURM_JOB_ID'] or lease['segment_index']!=index or lease['segment_limit']!=limit or lease['config_sha256']!=plan['config_sha256'] or lease['gpu_names']!=gpu_names:
@@ -86,7 +84,11 @@ def run_segment(run,index,limit,wall_seconds=6900,margin=900):
             completed=json.loads(own_receipt.read_text())
             if completed.get('success') is not True or completed['job_id']!=os.environ['SLURM_JOB_ID'] or completed['checkpoint_sha256']!=sha256(checkpoint):
                 raise RuntimeError('Requeued completion receipt failed verification')
+            if completed['checkpoint_epoch_index']!=state['epoch']:
+                raise RuntimeError('Requeued completion epoch differs from checkpoint')
             return completed
+        if restart_count>int(plan.get('maximum_preemptions',3)):
+            raise RuntimeError('Bounded preemption restart limit exceeded')
     else:
         state,previous=inspect_predecessor(run,index,limit,raw)
         if lease_path.exists():raise RuntimeError('Segment already started under a different execution')
@@ -111,10 +113,11 @@ def run_segment(run,index,limit,wall_seconds=6900,margin=900):
         runtime_config_path.chmod(0o444)
         remaining=wall_seconds-(time.monotonic()-started)
         if remaining<=margin:raise RuntimeError('No training budget remains after segment verification/setup')
-        subprocess.run([sys.executable,'-u','-m','training.training','--config',str(runtime_config_path),
-                        '--run-dir',str(run),'--worker-timeout','60','--progress-every','32',
-                        '--require-phase-gradient','--wall-seconds',str(remaining),
-                        '--stop-margin-seconds',str(margin)],check=True)
+        command=[sys.executable,'-u','-m','training.training','--config',str(runtime_config_path),
+                 '--run-dir',str(run),'--worker-timeout','60','--progress-every','32',
+                 '--wall-seconds',str(remaining),'--stop-margin-seconds',str(margin)]
+        if not raw.get('freeze_slm',False):command.append('--require-phase-gradient')
+        subprocess.run(command,check=True)
         state=read_checkpoint(checkpoint)
         if state['epoch']<=before_epoch:raise RuntimeError('Continuation did not advance a verified epoch')
         if not torch.isfinite(state['raw_phase']).all():raise RuntimeError('Nonfinite saved phase')

@@ -199,26 +199,24 @@ class NoiseLayer(nn.Module):
         self.target_saturation_ratio = float(config['target_saturation_ratio'])
         self.epsilon = float(config['epsilon'])
         self.min_clip_value = float(config['min_clip_value'])
+        from physics.exposure import exposure_settings
+        self.exposure_mode,self.fixed_exposure_scale=exposure_settings(config)
+
+    def scale_for(self, img):
+        """Signal multiplier; fixed mode has no quantile or scene normalization."""
+        if self.exposure_mode=='fixed':
+            return img.new_full((img.size(0),1,1,1),self.fixed_exposure_scale)
+        batch_flat=img.view(img.size(0),-1)
+        robust_max=torch.quantile(batch_flat,self.robust_max_percentile,dim=1)
+        full_well_electrons=self.camera_max_adu.to(img.device)/self.camera_gain.to(img.device)
+        target_peak_electrons=full_well_electrons*self.target_saturation_ratio
+        return (target_peak_electrons/(robust_max+self.epsilon)).view(-1,1,1,1)
 
     def forward(self, ideal_image_volume):
-        device = ideal_image_volume.device
-        img = ideal_image_volume.to(device=device, dtype=torch.float32)
-        
-        # --- ROBUST AUTO-EXPOSURE ---
-        # 1. Find the percentile (robust max) to ignore single hot pixels
-        batch_flat = img.view(img.size(0), -1)
-        robust_max = torch.quantile(batch_flat, self.robust_max_percentile, dim=1)
-        
-        # 2. Calculate target peak electrons based on camera capacity
-        full_well_electrons = self.camera_max_adu.to(device) / self.camera_gain.to(device)
-        target_peak_electrons = full_well_electrons * self.target_saturation_ratio
-        
-        # 3. Calculate the Scaling Factor (Exposure Time) needed for this specific batch
-        scaling_factor = target_peak_electrons / (robust_max + self.epsilon)
-        
-        # 4. Broadcast scale to shape [Batch, 1, 1, 1] for multiplication
-        scaling_factor = scaling_factor.view(-1, 1, 1, 1)
-        
+        device=ideal_image_volume.device
+        img=ideal_image_volume.to(device=device,dtype=torch.float32)
+        scaling_factor=self.scale_for(img)
+
         # Apply Scale
         img_scaled = img * scaling_factor
         
@@ -749,7 +747,7 @@ class OpticsSimulation(nn.Module):
                     
         return is_safe
      
-    def angular_spectrum_propagation(self, input_field, z, pad=True, debug=False, r_pinhole = None):
+    def angular_spectrum_propagation(self, input_field, z, pad=True, debug=False, r_pinhole = None, return_power_audit=False):
         """
         ASM propagation.
         Args:
@@ -842,6 +840,15 @@ class OpticsSimulation(nn.Module):
         
         self.check_sampling_limit(z, grid_size, verbose=debug)
         
+        if return_power_audit:
+            # Scalar sampled-field L2 accounting. Return the exact same field;
+            # diagnostic detaches cannot change its differentiable forward path.
+            power=lambda field:field.detach().abs().square().sum(dtype=torch.float64)*self.px**2
+            audit=dict(input_power=power(input_field),full_output_power=power(output_padded),
+                       cropped_output_power=power(output_field),
+                       spectral_output_power=power(U_prime)/(padded_field.shape[-2]*padded_field.shape[-1]),
+                       z_pixels=float(z),pixel_size_m=float(self.px))
+            return output_field,audit
         return output_field
     
         
